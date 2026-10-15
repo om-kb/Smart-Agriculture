@@ -9,8 +9,13 @@ describe("chat request validation", () => {
       message: "Should I irrigate?",
       farmContext: { crop: "Maize", farmSize: 2 },
       weatherContext: {
-        rainfallForecastMm: 5,
-        forecastDate: "2026-10-16",
+        timezone: "Asia/Kolkata",
+        dailyForecasts: [
+          {
+            date: "2026-10-16",
+            precipitationMm: 5,
+          },
+        ],
       },
       recentTurns: [{ role: "user", content: "Earlier question" }],
     });
@@ -33,31 +38,7 @@ describe("chat request validation", () => {
   });
 
   it("validates conversation turns using the role-specific stored message limits", () => {
-    const longAssistantReply = generateChatResponse({
-      message: "How do I protect crops from heat?",
-      farmContext: {
-        crop: "Maize",
-        soilType: "Black soil",
-        irrigationMethod: "Drip",
-        growthStage: "Flowering",
-        farmSize: 2.5,
-        location: "Pune, Pune, Maharashtra",
-      },
-      locationContext: {
-        displayName: "Pune, Pune, Maharashtra",
-        state: "Maharashtra",
-        district: "Pune",
-      },
-      weatherContext: {
-        temperatureC: 39,
-        humidityPercent: 60,
-        windSpeedKmh: 8,
-        forecastDate: "2026-10-16",
-        rainfallForecastMm: 4,
-        source: "Open-Meteo",
-        fetchedAt: "2026-10-16T01:00:00.000Z",
-      },
-    }).answer;
+    const longAssistantReply = "Stored assistant response ".repeat(30);
     assert.ok(longAssistantReply.length > 500);
     assert.equal(
       validateChatRequest({
@@ -99,14 +80,16 @@ describe("chat request validation", () => {
     assert.equal(
       validateChatRequest({
         message: "Question",
-        weatherContext: { humidityPercent: 120 },
+        weatherContext: { currentHumidityPercent: 120 },
       }).valid,
       false,
     );
     assert.equal(
       validateChatRequest({
         message: "Question",
-        weatherContext: { forecastDate: "2026-02-31" },
+        weatherContext: {
+          dailyForecasts: [{ date: "2026-02-31", precipitationMm: 0 }],
+        },
       }).valid,
       false,
     );

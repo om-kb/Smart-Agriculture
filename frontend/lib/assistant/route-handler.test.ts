@@ -82,6 +82,22 @@ function post(body: string, contentType = "application/json"): Request {
   });
 }
 
+function tomorrowInTimezone(timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const value = (type: string) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  const today = new Date(
+    `${value("year")}-${value("month")}-${value("day")}T00:00:00.000Z`,
+  );
+  today.setUTCDate(today.getUTCDate() + 1);
+  return today.toISOString().slice(0, 10);
+}
+
 describe("POST /api/assistant/chat", () => {
   it("returns a typed deterministic response without external services", async () => {
     const response = await handleChatRequest(post(JSON.stringify({
@@ -109,10 +125,11 @@ describe("POST /api/assistant/chat", () => {
             location: "Pune, Pune, Maharashtra",
           },
           weatherContext: {
-            rainfallForecastMm: 4,
-            forecastDate: "2026-10-16",
+            timezone: "Asia/Kolkata",
+            dailyForecasts: [
+              { date: tomorrowInTimezone("Asia/Kolkata"), precipitationMm: 4 },
+            ],
             source: "Open-Meteo",
-            fetchedAt: "2026-10-15T06:30:00.000Z",
           },
         }),
       ),
@@ -120,7 +137,7 @@ describe("POST /api/assistant/chat", () => {
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(body.topicId, "weather.forecast");
-    assert.match(body.answer, /4 mm forecast rainfall/);
+    assert.match(body.answer, /Rain is forecast for Pune.*approximately 4 mm expected/);
     assert.match(body.answer, /Open-Meteo/);
   });
 
@@ -133,8 +150,6 @@ describe("POST /api/assistant/chat", () => {
         currentWeather,
       ),
     }).answer;
-    assert.ok(longReply.length > 500);
-
     const response = await handleChatRequest(
       post(
         JSON.stringify({

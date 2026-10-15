@@ -5,7 +5,7 @@ export async function fetchLocationOptions<T>(
 ): Promise<T[]> {
   let response: Response;
   try {
-    response = await fetch(path, { signal });
+    response = await fetch(path, { cache: "no-store", signal });
   } catch {
     throw new Error("Could not connect. Check your internet connection and retry.");
   }

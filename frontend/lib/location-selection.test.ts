@@ -125,4 +125,81 @@ describe("cascading location selection", () => {
       { code: "554", name: "Alappuzha", state_code: "32" },
     ]);
   });
+
+  it("filters live district records for all six states by normalized ownership", () => {
+    const stateDistricts = [
+      { code: "524", name: "Bagalkote", state_code: "29" },
+      { code: "466", name: "Ahilyanagar", state_code: "27" },
+      { code: "610", name: "Ariyalur", state_code: "33" },
+      { code: "554", name: "Alappuzha", state_code: "32" },
+      { code: "118", name: "Agra", state_code: "9" },
+      { code: "77", name: "Central", state_code: "7" },
+    ];
+
+    for (const stateCode of ["29", "27", "33", "32", "9", "7"]) {
+      const filtered = filterDistrictsForState(stateDistricts, stateCode);
+      assert.ok(filtered.length > 0, `state ${stateCode} should have districts`);
+      assert.ok(filtered.every((district) => district.state_code === stateCode));
+    }
+  });
+
+  it("keeps the newest response after six rapid state switches", async () => {
+    const requests = createRequestSequence();
+    const stateCodes = ["29", "27", "33", "32", "9", "7"];
+    const pending: Array<{
+      requestId: number;
+      stateCode: string;
+      resolve: (districts: Array<{
+        code: string;
+        name: string;
+        state_code: string;
+      }>) => void;
+    }> = [];
+    let displayedState = "";
+    let displayedDistricts: Array<{
+      code: string;
+      name: string;
+      state_code: string;
+    }> = [];
+
+    const loads = stateCodes.map((stateCode) => {
+      const requestId = requests.next();
+      let resolve!: (districts: Array<{
+        code: string;
+        name: string;
+        state_code: string;
+      }>) => void;
+      const response = new Promise<Array<{
+        code: string;
+        name: string;
+        state_code: string;
+      }>>((complete) => {
+        resolve = complete;
+      });
+      pending.push({ requestId, stateCode, resolve });
+      return response.then((districts) => {
+        if (requests.isCurrent(requestId)) {
+          displayedState = stateCode;
+          displayedDistricts = filterDistrictsForState(districts, stateCode);
+        }
+      });
+    });
+
+    for (const request of [...pending].reverse()) {
+      request.resolve([
+        {
+          code: `district-${request.stateCode}`,
+          name: `District ${request.stateCode}`,
+          state_code: request.stateCode,
+        },
+        { code: "foreign", name: "Foreign", state_code: "99" },
+      ]);
+    }
+    await Promise.all(loads);
+
+    assert.equal(displayedState, "7");
+    assert.deepEqual(displayedDistricts, [
+      { code: "district-7", name: "District 7", state_code: "7" },
+    ]);
+  });
 });

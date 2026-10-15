@@ -15,41 +15,55 @@ describe("rule-based response generation", () => {
 
   it("does not fabricate current weather when context is absent", () => {
     const response = generateChatResponse({ message: "current weather" });
-    assert.match(response.answer, /No validated live weather data was available/);
+    assert.match(response.answer, /don't have current weather data/i);
     assert.equal(response.basis, "general-guidance");
     assert.deepEqual(response.missingInformation, [
-      "weather data from a connected weather source",
+      "current weather data from a connected weather source",
     ]);
     const locationOnly = generateChatResponse({
       message: "What's the weather here?",
       locationContext: { displayName: "Pune", state: "Maharashtra" },
     });
     assert.equal(locationOnly.topicId, "weather.current");
-    assert.match(
-      locationOnly.answer,
-      /No validated live weather data was available/,
-    );
+    assert.match(locationOnly.answer, /don't have current weather data/i);
   });
 
-  it("uses only supplied weather fields and marks their context", () => {
+  it("answers rainfall questions from the exact forecast date without current readings", () => {
     const request: ChatRequest = {
-      message: "weather tomorrow",
+      message: "Will it rain tomorrow?",
+      locationContext: { displayName: "Udupi" },
       weatherContext: {
-        rainfallForecastMm: 4.5,
-        forecastDate: "2026-10-16",
-        source: "test provider",
-        fetchedAt: "2026-10-15T12:00:00Z",
+        timezone: "Asia/Kolkata",
+        currentTemperatureC: 39,
+        dailyForecasts: [
+          { date: "2026-10-16", precipitationMm: 1 },
+          {
+            date: "2026-10-17",
+            precipitationMm: 12.3,
+            precipitationProbabilityPercent: 80,
+          },
+        ],
+        source: "Open-Meteo",
       },
     };
-    const response = generateChatResponse(request);
+    const response = generateChatResponse(
+      request,
+      new Date("2026-10-16T01:00:00.000Z"),
+    );
     assert.equal(response.basis, "weather-context");
-    assert.match(response.answer, /4.5 mm forecast rainfall/);
-    assert.match(response.answer, /test provider/);
+    assert.match(
+      response.answer,
+      /Rain is forecast for Udupi tomorrow, with approximately 12\.3 mm expected/,
+    );
+    assert.match(response.answer, /80%/);
+    assert.match(response.answer, /Open-Meteo/);
+    assert.doesNotMatch(response.answer, /39 °C/);
+    assert.doesNotMatch(response.answer, /2026-10-/);
+    assert.doesNotMatch(response.answer, /T\d{2}:/);
     assert.equal(response.verificationStatus, "unverified-general-guidance");
-    assert.doesNotMatch(response.answer, /temperature is \d/);
   });
 
-  it("answers the farmer's local weather and irrigation questions from context", () => {
+  it("answers current weather with current readings only", () => {
     const current = generateChatResponse({
       message: "What is the weather like here?",
       locationContext: {
@@ -58,53 +72,103 @@ describe("rule-based response generation", () => {
         district: "Pune",
       },
       weatherContext: {
-        temperatureC: 29,
-        humidityPercent: 60,
+        currentTemperatureC: 29,
+        currentHumidityPercent: 60,
         source: "Open-Meteo",
-        fetchedAt: "2026-10-15T06:30:00.000Z",
+        timezone: "Asia/Kolkata",
+        dailyForecasts: [
+          { date: "2026-10-16", precipitationMm: 8 },
+        ],
       },
     });
     assert.equal(current.topicId, "weather.current");
     assert.match(current.answer, /29 °C/);
     assert.match(current.answer, /60% humidity/);
-    assert.match(current.answer, /selected forecast location is Pune/);
+    assert.match(current.answer, /Current weather for Pune/);
+    assert.match(current.answer, /regional estimates/);
+    assert.doesNotMatch(current.answer, /8 mm/);
+    assert.doesNotMatch(current.answer, /2026-10-/);
 
     const irrigation = generateChatResponse({
       message: "Should I consider irrigating tomorrow?",
+      locationContext: { displayName: "Pune" },
       farmContext: {
         crop: "Maize",
         soilType: "Black soil",
         growthStage: "Flowering",
       },
       weatherContext: {
-        rainfallForecastMm: 4,
-        forecastDate: "2026-10-16",
+        timezone: "Asia/Kolkata",
+        dailyForecasts: [{ date: "2026-10-16", precipitationMm: 4 }],
         source: "Open-Meteo",
       },
-    });
+    }, new Date("2026-10-15T12:00:00.000Z"));
     assert.equal(irrigation.basis, "weather-context");
-    assert.match(irrigation.answer, /4 mm forecast rainfall/);
+    assert.match(irrigation.answer, /Rain is forecast for Pune tomorrow, with approximately 4 mm expected/);
     assert.ok(
       irrigation.missingInformation.includes("recent rainfall or a local rainfall forecast") === false,
     );
   });
 
-  it("treats an observed zero rainfall value as supplied context", () => {
+  it("uses the farm timezone when determining tomorrow across UTC date boundaries", () => {
     const response = generateChatResponse({
-      message: "Should I irrigate after rain?",
+      message: "Will it rain tomorrow?",
+      locationContext: { displayName: "Udupi" },
       weatherContext: {
-        rainfallForecastMm: 0,
-        forecastDate: "2026-10-16",
+        timezone: "Asia/Kolkata",
+        dailyForecasts: [
+          { date: "2026-10-17", precipitationMm: 1 },
+          { date: "2026-10-18", precipitationMm: 6.5 },
+        ],
       },
-    });
+    }, new Date("2026-10-16T20:00:00.000Z"));
     assert.equal(response.basis, "weather-context");
-    assert.match(response.answer, /0 mm forecast rainfall/);
-    assert.ok(
-      !response.missingInformation.includes(
-        "recent rainfall or a local rainfall forecast",
-      ),
+    assert.match(response.answer, /approximately 6\.5 mm expected/);
+  });
+
+  it("does not substitute another day when tomorrow's rainfall forecast is unavailable", () => {
+    const response = generateChatResponse(
+      {
+        message: "Will it rain tomorrow?",
+        locationContext: { displayName: "Udupi" },
+        weatherContext: {
+          timezone: "Asia/Kolkata",
+          dailyForecasts: [
+            { date: "2026-10-15", precipitationMm: 0 },
+            { date: "2026-10-18", precipitationMm: 20 },
+          ],
+          source: "Open-Meteo",
+        },
+      },
+      new Date("2026-10-15T12:00:00.000Z"),
     );
-    assert.doesNotMatch(response.answer, /No validated live weather data was available/);
+    assert.match(response.answer, /don't have tomorrow's forecast/i);
+    assert.doesNotMatch(response.answer, /20 mm/);
+    assert.ok(response.missingInformation.includes("tomorrow's rainfall forecast"));
+  });
+
+  it("uses an actual zero forecast and its supplied probability without inventing certainty", () => {
+    const response = generateChatResponse(
+      {
+        message: "Will it rain tomorrow?",
+        locationContext: { displayName: "Udupi" },
+        weatherContext: {
+          timezone: "Asia/Kolkata",
+          dailyForecasts: [
+            {
+              date: "2026-10-16",
+              precipitationMm: 0,
+              precipitationProbabilityPercent: 25,
+            },
+          ],
+          source: "Open-Meteo",
+        },
+      },
+      new Date("2026-10-15T12:00:00.000Z"),
+    );
+    assert.match(response.answer, /approximately 0 mm expected/);
+    assert.match(response.answer, /25%/);
+    assert.doesNotMatch(response.answer, /no chance|certain|guaranteed/i);
   });
 
   it("uses crop-only follow-up answers without inventing irrigation needs", () => {
@@ -158,13 +222,18 @@ describe("rule-based response generation", () => {
       district: "Pune",
     };
     const weatherContext = {
-      temperatureC: 29,
-      humidityPercent: 60,
-      windSpeedKmh: 8,
-      rainfallForecastMm: 4,
-      forecastDate: "2026-10-17",
+      timezone: "Asia/Kolkata",
+      currentTemperatureC: 29,
+      currentHumidityPercent: 60,
+      currentWindSpeedKmh: 8,
+      dailyForecasts: [
+        {
+          date: "2026-10-17",
+          precipitationMm: 4,
+          precipitationProbabilityPercent: 50,
+        },
+      ],
       source: "Open-Meteo",
-      fetchedAt: "2026-10-16T01:00:00.000Z",
     };
     const questions = [
       {
@@ -177,7 +246,7 @@ describe("rule-based response generation", () => {
       },
       {
         message: "Will it rain tomorrow?",
-        expected: /4 mm forecast rainfall/,
+        expected: /4 mm expected/,
       },
       {
         message: "What's the weather here?",
@@ -191,7 +260,7 @@ describe("rule-based response generation", () => {
         farmContext,
         locationContext,
         weatherContext,
-      });
+      }, new Date("2026-10-16T01:00:00.000Z"));
       assert.match(response.answer, expected, message);
       if (message === "What's the weather here?") {
         assert.doesNotMatch(response.answer, /question mentions wheat/i);

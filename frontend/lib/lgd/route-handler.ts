@@ -7,6 +7,9 @@ export interface LocationListResponse<T> {
 const CACHE_HEADERS = {
   "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
 };
+const QUERY_RESPONSE_HEADERS = {
+  "Cache-Control": "private, no-store",
+};
 
 export function createEntityRouteHandler<T>(
   parameter: "state" | "district",
@@ -34,7 +37,7 @@ export function createEntityRouteHandler<T>(
     try {
       const data = await fetchEntities(entries[0][1]);
       const response: LocationListResponse<T> = { data };
-      return Response.json(response, { headers: CACHE_HEADERS });
+      return Response.json(response, { headers: QUERY_RESPONSE_HEADERS });
     } catch (error) {
       const serviceError =
         error instanceof LgdServiceError

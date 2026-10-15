@@ -97,7 +97,7 @@ export default function AssistantPage() {
     : !location.coordinatesConfirmed
       ? "Your location is saved but not confirmed. Review it before weather data is requested."
       : weather
-      ? `Using ${location.name}, your validated saved farm profile, and Open-Meteo weather fetched at ${weather.fetchedAt}.`
+      ? `Using ${location.name}, your validated saved farm profile, and current Open-Meteo weather context.`
       : failedWeatherKey === locationKey
         ? `Using ${location.name} and your validated saved farm profile. Weather could not be loaded for this reply.`
         : `Using ${location.name} and your validated saved farm profile. Loading current weather context…`;

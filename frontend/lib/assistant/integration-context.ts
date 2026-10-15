@@ -46,28 +46,39 @@ export function createAssistantRequestContext(
 
   if (weather) {
     const weatherContext: NonNullable<ChatRequest["weatherContext"]> = {
+      timezone: weather.location.timezone,
       source: weather.source.name,
-      fetchedAt: weather.fetchedAt,
     };
     if (weather.current.temperatureC !== null) {
-      weatherContext.temperatureC = weather.current.temperatureC;
+      weatherContext.currentTemperatureC = weather.current.temperatureC;
     }
     if (weather.current.humidityPercent !== null) {
-      weatherContext.humidityPercent = weather.current.humidityPercent;
+      weatherContext.currentHumidityPercent = weather.current.humidityPercent;
     }
     if (weather.current.windSpeedKmh !== null) {
-      weatherContext.windSpeedKmh = weather.current.windSpeedKmh;
+      weatherContext.currentWindSpeedKmh = weather.current.windSpeedKmh;
     }
-    const currentDate = weather.current.time?.slice(0, 10);
-    const nextForecast = currentDate
-      ? weather.daily.find((day) => day.date > currentDate)
-      : undefined;
-    if (nextForecast) {
-      weatherContext.forecastDate = nextForecast.date;
-      if (nextForecast.precipitationMm !== null) {
-        weatherContext.rainfallForecastMm = nextForecast.precipitationMm;
-      }
-    }
+    weatherContext.dailyForecasts = weather.daily.map((day) => ({
+      date: day.date,
+      ...(day.maxTemperatureC !== null
+        ? { maxTemperatureC: day.maxTemperatureC }
+        : {}),
+      ...(day.minTemperatureC !== null
+        ? { minTemperatureC: day.minTemperatureC }
+        : {}),
+      ...(day.precipitationMm !== null
+        ? { precipitationMm: day.precipitationMm }
+        : {}),
+      ...(day.precipitationProbabilityPercent !== null
+        ? {
+            precipitationProbabilityPercent:
+              day.precipitationProbabilityPercent,
+          }
+        : {}),
+      ...(day.maxWindSpeedKmh !== null
+        ? { maxWindSpeedKmh: day.maxWindSpeedKmh }
+        : {}),
+    }));
     context.weatherContext = weatherContext;
   }
 

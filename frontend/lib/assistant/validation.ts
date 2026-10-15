@@ -98,24 +98,55 @@ function validateWeatherContext(value: unknown): value is WeatherContext {
   return (
     isRecord(value) &&
     hasOnlyKeys(value, [
-      "temperatureC",
-      "humidityPercent",
-      "rainfallForecastMm",
-      "windSpeedKmh",
-      "forecastDate",
+      "timezone",
+      "currentTemperatureC",
+      "currentHumidityPercent",
+      "currentWindSpeedKmh",
+      "dailyForecasts",
       "source",
-      "fetchedAt",
     ]) &&
-    optionalNumber(value.temperatureC, -100, 70) &&
-    optionalNumber(value.humidityPercent, 0, 100) &&
-    optionalNumber(value.rainfallForecastMm, 0, 10_000) &&
-    optionalNumber(value.windSpeedKmh, 0, 500) &&
-    optionalString(value.forecastDate, 10) &&
-    (value.forecastDate === undefined || isIsoDate(value.forecastDate)) &&
-    optionalString(value.source, 100) &&
-    optionalString(value.fetchedAt, 40) &&
-    (value.fetchedAt === undefined || !Number.isNaN(Date.parse(value.fetchedAt)))
+    optionalTimezone(value.timezone) &&
+    optionalNumber(value.currentTemperatureC, -100, 70) &&
+    optionalNumber(value.currentHumidityPercent, 0, 100) &&
+    optionalNumber(value.currentWindSpeedKmh, 0, 500) &&
+    (value.dailyForecasts === undefined ||
+      (Array.isArray(value.dailyForecasts) &&
+        value.dailyForecasts.length <= 7 &&
+        value.dailyForecasts.every(validateDailyForecast))) &&
+    optionalString(value.source, 100)
   );
+}
+
+function validateDailyForecast(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "date",
+      "maxTemperatureC",
+      "minTemperatureC",
+      "precipitationMm",
+      "precipitationProbabilityPercent",
+      "maxWindSpeedKmh",
+    ]) &&
+    typeof value.date === "string" &&
+    isIsoDate(value.date) &&
+    optionalNumber(value.maxTemperatureC, -100, 70) &&
+    optionalNumber(value.minTemperatureC, -100, 70) &&
+    optionalNumber(value.precipitationMm, 0, 10_000) &&
+    optionalNumber(value.precipitationProbabilityPercent, 0, 100) &&
+    optionalNumber(value.maxWindSpeedKmh, 0, 500)
+  );
+}
+
+function optionalTimezone(value: unknown): value is string | undefined {
+  if (value === undefined) return true;
+  if (typeof value !== "string" || value.length > 100) return false;
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function validateLocationContext(value: unknown): value is LocationContext {

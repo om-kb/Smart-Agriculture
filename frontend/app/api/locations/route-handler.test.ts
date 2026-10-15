@@ -34,7 +34,7 @@ describe("location route validation", () => {
     });
   });
 
-  it("returns cached data using the documented query parameter", async () => {
+  it("returns query-filtered data without public caching", async () => {
     const getDistricts = createEntityRouteHandler("state", async (state) => [
       { code: "554", name: "Alappuzha", state_code: state },
     ]);
@@ -43,7 +43,7 @@ describe("location route validation", () => {
     );
 
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get("Cache-Control"), "public, s-maxage=3600, stale-while-revalidate=86400");
+    assert.equal(response.headers.get("Cache-Control"), "private, no-store");
     assert.deepEqual(await response.json(), {
       data: [{ code: "554", name: "Alappuzha", state_code: "32" }],
     });

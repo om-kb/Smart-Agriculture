@@ -38,47 +38,144 @@ function contextFollowUp(
   return null;
 }
 
-function weatherSummary(context: WeatherContext): string[] {
-  const values: string[] = [];
-  if (context.temperatureC !== undefined) {
-    values.push(`${context.temperatureC} °C`);
+function localDateInTimezone(now: Date, timezone: string): string | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(now);
+    const part = (type: string) =>
+      parts.find((item) => item.type === type)?.value;
+    const year = part("year");
+    const month = part("month");
+    const day = part("day");
+    return year && month && day ? `${year}-${month}-${day}` : null;
+  } catch {
+    return null;
   }
-  if (context.humidityPercent !== undefined) {
-    values.push(`${context.humidityPercent}% humidity`);
-  }
-  if (context.rainfallForecastMm !== undefined) {
-    values.push(`${context.rainfallForecastMm} mm forecast rainfall`);
-  }
-  if (context.windSpeedKmh !== undefined) {
-    values.push(`${context.windSpeedKmh} km/h wind`);
-  }
-  return values;
 }
 
-function appendWeatherContext(
-  answer: string,
+function tomorrowDate(now: Date, timezone?: string): string | null {
+  if (!timezone) return null;
+  const localToday = localDateInTimezone(now, timezone);
+  if (!localToday) return null;
+  const tomorrow = new Date(`${localToday}T00:00:00.000Z`);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  return tomorrow.toISOString().slice(0, 10);
+}
+
+function tomorrowForecast(
+  context: WeatherContext | undefined,
+  now: Date,
+): NonNullable<WeatherContext["dailyForecasts"]>[number] | undefined {
+  const date = context ? tomorrowDate(now, context.timezone) : null;
+  return date
+    ? context?.dailyForecasts?.find((forecast) => forecast.date === date)
+    : undefined;
+}
+
+function formatWeatherNumber(value: number): string {
+  return new Intl.NumberFormat("en-IN", {
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function currentWeatherAnswer(
+  request: ChatRequest,
   context?: WeatherContext,
 ): { answer: string; used: boolean } {
   if (!context) {
     return {
-      answer: `${answer} No validated live weather data was available for this reply, so I cannot say what conditions apply at your farm.`,
+      answer: "I don't have current weather data for your location right now.",
+      used: false,
+    };
+  }
+  const values: string[] = [];
+  if (context.currentTemperatureC !== undefined) {
+    values.push(`${formatWeatherNumber(context.currentTemperatureC)} °C`);
+  }
+  if (context.currentHumidityPercent !== undefined) {
+    values.push(`${formatWeatherNumber(context.currentHumidityPercent)}% humidity`);
+  }
+  if (context.currentWindSpeedKmh !== undefined) {
+    values.push(`${formatWeatherNumber(context.currentWindSpeedKmh)} km/h wind`);
+  }
+  if (!values.length) {
+    return {
+      answer: "I don't have current weather measurements for your location right now.",
+      used: false,
+    };
+  }
+  const location =
+    request.locationContext?.displayName ??
+    request.locationContext?.district ??
+    request.locationContext?.state ??
+    "your selected area";
+  const source = context.source ? ` (${context.source})` : "";
+  return {
+    answer: `Current weather for ${location}: ${values.join(", ")}${source}. These are regional estimates, not measurements at your field.`,
+    used: true,
+  };
+}
+
+function forecastWeatherAnswer(
+  request: ChatRequest,
+  context: WeatherContext | undefined,
+  now: Date,
+): { answer: string; used: boolean } {
+  const location =
+    request.locationContext?.displayName ??
+    request.locationContext?.district ??
+    request.locationContext?.state ??
+    "your selected area";
+  const forecast = tomorrowForecast(context, now);
+  const source = context?.source ? ` Source: ${context.source}.` : "";
+  if (!forecast) {
+    return {
+      answer: `I don't have tomorrow's forecast for ${location} available right now. Check the latest local forecast before making irrigation decisions.${source}`,
       used: false,
     };
   }
 
-  const summary = weatherSummary(context);
-  const source = context.source ? ` from ${context.source}` : "";
-  const forDate = context.forecastDate ? ` for ${context.forecastDate}` : "";
-  const fetchedAt = context.fetchedAt
-    ? `, supplied at ${context.fetchedAt}`
-    : "";
-  const details = summary.length
-    ? summary.join(", ")
-    : "no numeric weather measurements";
-  return {
-    answer: `${answer} The supplied weather context${source}${forDate}${fetchedAt} reports ${details}. These values are not field measurements.`,
-    used: true,
-  };
+  const details: string[] = [];
+  if (forecast.precipitationMm !== undefined) {
+    details.push(
+      `approximately ${formatWeatherNumber(forecast.precipitationMm)} mm of rain is forecast`,
+    );
+  }
+  if (forecast.precipitationProbabilityPercent !== undefined) {
+    details.push(
+      `the forecast rain probability is ${formatWeatherNumber(forecast.precipitationProbabilityPercent)}%`,
+    );
+  }
+  if (
+    forecast.maxTemperatureC !== undefined &&
+    forecast.minTemperatureC !== undefined
+  ) {
+    details.push(
+      `temperatures near ${formatWeatherNumber(forecast.minTemperatureC)}–${formatWeatherNumber(forecast.maxTemperatureC)} °C are forecast`,
+    );
+  }
+  if (forecast.maxWindSpeedKmh !== undefined) {
+    details.push(
+      `maximum wind near ${formatWeatherNumber(forecast.maxWindSpeedKmh)} km/h is forecast`,
+    );
+  }
+  if (!details.length) {
+    return {
+      answer: `Tomorrow's forecast for ${location} is available, but rainfall details are not. I can't estimate rain without that information.${source}`,
+      used: false,
+    };
+  }
+  const answer =
+    forecast.precipitationMm !== undefined
+      ? `${forecast.precipitationMm === 0 && forecast.precipitationProbabilityPercent === undefined ? "No rain is forecast" : "Rain is forecast"} for ${location} tomorrow, with approximately ${formatWeatherNumber(forecast.precipitationMm)} mm expected.${forecast.precipitationProbabilityPercent === undefined ? "" : ` The forecast rain probability is ${formatWeatherNumber(forecast.precipitationProbabilityPercent)}%.`} Actual rainfall at your farm may differ.`
+      : forecast.precipitationProbabilityPercent !== undefined
+        ? `Rain probability for ${location} tomorrow is forecast at ${formatWeatherNumber(forecast.precipitationProbabilityPercent)}%. Actual rainfall at your farm may differ.`
+        : `Tomorrow's forecast for ${location}: ${details.join("; ")}. Actual conditions at your farm may differ.`;
+  return { answer: `${answer}${source}`, used: true };
 }
 
 function confidenceLabel(
@@ -90,12 +187,16 @@ function confidenceLabel(
 function missingForTopic(
   topicId: TopicId,
   request: ChatRequest,
+  now: Date,
 ): string[] {
   const missing: string[] = [];
   if (topicId.startsWith("irrigation.")) {
     if (!request.farmContext?.crop) missing.push("crop");
     if (!request.farmContext?.growthStage) missing.push("growth stage");
-    if (request.weatherContext?.rainfallForecastMm === undefined) {
+    if (
+      tomorrowForecast(request.weatherContext, now)?.precipitationMm ===
+      undefined
+    ) {
       missing.push("recent rainfall or a local rainfall forecast");
     }
     if (topicId === "irrigation.general" || topicId === "irrigation.soil-moisture") {
@@ -106,10 +207,20 @@ function missingForTopic(
     if (!request.farmContext?.growthStage) missing.push("growth stage");
   }
   if (
-    (topicId === "weather.current" || topicId === "weather.forecast") &&
-    !request.weatherContext
+    topicId === "weather.current" &&
+    request.weatherContext?.currentTemperatureC === undefined &&
+    request.weatherContext?.currentHumidityPercent === undefined &&
+    request.weatherContext?.currentWindSpeedKmh === undefined
   ) {
-    missing.push("weather data from a connected weather source");
+    missing.push("current weather data from a connected weather source");
+  }
+  if (
+    topicId === "weather.forecast" &&
+    tomorrowForecast(request.weatherContext, now)?.precipitationMm === undefined &&
+    tomorrowForecast(request.weatherContext, now)
+      ?.precipitationProbabilityPercent === undefined
+  ) {
+    missing.push("tomorrow's rainfall forecast");
   }
   if (
     topicId === "crop.suitability" &&
@@ -130,19 +241,29 @@ function generalResponse(
   confidenceRating: ChatResponse["confidenceLabel"],
   basis: ChatResponse["basis"],
   cropOverride?: string,
+  now = new Date(),
 ): ChatResponse {
   const entry = getKnowledgeEntry(topicId);
   let answer = entry.answer;
   let usedWeather = false;
 
-  if (
-    topicId.startsWith("weather.") ||
-    (topicId.startsWith("irrigation.") &&
-      (topicId === "irrigation.general" || topicId === "irrigation.soil-moisture"))
+  if (topicId === "weather.current") {
+    const current = currentWeatherAnswer(request, request.weatherContext);
+    answer = current.answer;
+    usedWeather = current.used;
+  } else if (topicId === "weather.forecast") {
+    const forecast = forecastWeatherAnswer(request, request.weatherContext, now);
+    answer = forecast.answer;
+    usedWeather = forecast.used;
+  } else if (
+    topicId === "irrigation.general" ||
+    topicId === "irrigation.soil-moisture"
   ) {
-    const withContext = appendWeatherContext(answer, request.weatherContext);
-    answer = withContext.answer;
-    usedWeather = withContext.used;
+    const forecast = forecastWeatherAnswer(request, request.weatherContext, now);
+    if (request.weatherContext) {
+      answer = `${answer} ${forecast.answer}`;
+      usedWeather = forecast.used;
+    }
   }
 
   const explicitCrops = extractEntities(request.message).crops;
@@ -170,11 +291,8 @@ function generalResponse(
   if (location && topicId === "crop.suitability") {
     answer += ` You provided ${location} as location context, but I do not have verified district-specific crop data for it.`;
   }
-  if (location && usedWeather) {
-    answer += ` The selected forecast location is ${location}.`;
-  }
 
-  const missingInformation = missingForTopic(topicId, request);
+  const missingInformation = missingForTopic(topicId, request, now);
   const suggestedFollowUps = [...entry.followUpQuestions];
   if (missingInformation.length > 0 && topicId.startsWith("irrigation.")) {
     suggestedFollowUps.unshift(
@@ -309,7 +427,10 @@ function savedProfileAnswer(request: ChatRequest): ChatResponse | null {
   };
 }
 
-export function generateChatResponse(request: ChatRequest): ChatResponse {
+export function generateChatResponse(
+  request: ChatRequest,
+  now = new Date(),
+): ChatResponse {
   const profileAnswer = savedProfileAnswer(request);
   if (profileAnswer) return profileAnswer;
 
@@ -324,6 +445,7 @@ export function generateChatResponse(request: ChatRequest): ChatResponse {
         "moderate",
         "contextual-follow-up",
         continuation.crop,
+        now,
       );
       response.answer = `Thanks for sharing that you grow ${continuation.crop}. ${response.answer} To discuss irrigation factors further, I would still need your local rainfall information, crop growth stage, and field soil condition.`;
       response.missingInformation = [
@@ -366,5 +488,7 @@ export function generateChatResponse(request: ChatRequest): ChatResponse {
     classification.confidence,
     confidenceLabel(classification),
     "general-guidance",
+    undefined,
+    now,
   );
 }

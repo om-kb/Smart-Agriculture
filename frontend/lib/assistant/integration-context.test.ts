@@ -93,13 +93,29 @@ describe("assistant application context integration", () => {
         farmSize: 2.5,
       },
       weatherContext: {
+        timezone: "Asia/Kolkata",
         source: "Open-Meteo",
-        fetchedAt: "2026-10-15T06:30:00.000Z",
-        temperatureC: 29,
-        humidityPercent: 60,
-        windSpeedKmh: 8,
-        forecastDate: "2026-10-16",
-        rainfallForecastMm: 4,
+        currentTemperatureC: 29,
+        currentHumidityPercent: 60,
+        currentWindSpeedKmh: 8,
+        dailyForecasts: [
+          {
+            date: "2026-10-15",
+            maxTemperatureC: 32,
+            minTemperatureC: 23,
+            precipitationMm: 1.2,
+            precipitationProbabilityPercent: 30,
+            maxWindSpeedKmh: 18,
+          },
+          {
+            date: "2026-10-16",
+            maxTemperatureC: 31,
+            minTemperatureC: 22,
+            precipitationMm: 4,
+            precipitationProbabilityPercent: 50,
+            maxWindSpeedKmh: 14,
+          },
+        ],
       },
     });
   });
@@ -120,6 +136,7 @@ describe("assistant application context integration", () => {
         {
           ...weather.daily[0],
           date: "2026-10-15",
+          precipitationMm: null,
         },
       ],
     };
@@ -128,8 +145,11 @@ describe("assistant application context integration", () => {
       null,
       missingValues,
     ).weatherContext;
-    assert.equal(weatherContext?.temperatureC, undefined);
-    assert.equal(weatherContext?.humidityPercent, undefined);
-    assert.equal(weatherContext?.rainfallForecastMm, undefined);
+    assert.equal(weatherContext?.currentTemperatureC, undefined);
+    assert.equal(weatherContext?.currentHumidityPercent, undefined);
+    assert.equal(
+      weatherContext?.dailyForecasts?.[0]?.precipitationMm,
+      undefined,
+    );
   });
 });

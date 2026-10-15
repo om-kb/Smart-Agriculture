@@ -4,9 +4,6 @@ const LGD_API_ORIGIN = "https://india-lgd-index-api.vercel.app";
 const REQUEST_TIMEOUT_MS = 8_000;
 
 type Entity = State | District | Subdistrict | Block;
-type FetchWithNextOptions = RequestInit & {
-  next?: { revalidate: number };
-};
 
 export class LgdServiceError extends Error {
   readonly status: number;
@@ -80,8 +77,17 @@ function parseStates(payload: unknown): State[] {
   );
 }
 
-function parseDistricts(payload: unknown): District[] {
-  return parseEntities<District>(payload, ["code", "name", "state_code"]);
+function parseDistricts(payload: unknown, requestedState: string): District[] {
+  const entities = parseEntities<
+    Omit<District, "state_code"> & { state_code?: string }
+  >(payload, ["code", "name"], ["state_code"]);
+
+  return entities.map((district) => {
+    if (district.state_code && district.state_code !== requestedState) {
+      throw new LgdServiceError("Location data could not be read.");
+    }
+    return { ...district, state_code: requestedState };
+  });
 }
 
 function parseSubdistricts(payload: unknown): Subdistrict[] {
@@ -113,8 +119,8 @@ export function createLgdService(fetcher: typeof fetch = fetch) {
         signal: signal
           ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
           : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        next: { revalidate: 3600 },
-      } as FetchWithNextOptions);
+        cache: "no-store",
+      });
 
       if (!response.ok) {
         throw new LgdServiceError(
@@ -153,7 +159,7 @@ export function createLgdService(fetcher: typeof fetch = fetch) {
     districts: (state: string, signal?: AbortSignal) =>
       getEntities(
         `/v1/districts?state=${encodeURIComponent(state)}`,
-        parseDistricts,
+        (payload) => parseDistricts(payload, state),
         signal,
       ),
     subdistricts: (district: string, signal?: AbortSignal) =>

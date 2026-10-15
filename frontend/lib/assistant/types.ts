@@ -112,13 +112,19 @@ export interface FarmContext {
 }
 
 export interface WeatherContext {
-  temperatureC?: number;
-  humidityPercent?: number;
-  rainfallForecastMm?: number;
-  windSpeedKmh?: number;
-  forecastDate?: string;
+  timezone?: string;
+  currentTemperatureC?: number;
+  currentHumidityPercent?: number;
+  currentWindSpeedKmh?: number;
+  dailyForecasts?: Array<{
+    date: string;
+    maxTemperatureC?: number;
+    minTemperatureC?: number;
+    precipitationMm?: number;
+    precipitationProbabilityPercent?: number;
+    maxWindSpeedKmh?: number;
+  }>;
   source?: string;
-  fetchedAt?: string;
 }
 
 export interface LocationContext {

@@ -82,6 +82,39 @@ describe("LGD service failures", () => {
     ]);
   });
 
+  it("normalizes ownership for query-filtered districts without ownership metadata", async () => {
+    const service = createLgdService(async () =>
+      Response.json({
+        success: true,
+        data: [
+          { code: "521", name: "Pune", state_code: "27" },
+          { code: "522", name: "Other valid district" },
+        ],
+        meta: { count: 2 },
+      }),
+    );
+
+    assert.deepEqual(await service.districts("27"), [
+      { code: "521", name: "Pune", state_code: "27" },
+      { code: "522", name: "Other valid district", state_code: "27" },
+    ]);
+  });
+
+  it("rejects a district whose explicit ownership conflicts with the requested state", async () => {
+    const service = createLgdService(async () =>
+      Response.json({
+        success: true,
+        data: [{ code: "521", name: "Pune", state_code: "29" }],
+        meta: { count: 1 },
+      }),
+    );
+
+    await assert.rejects(
+      service.districts("27"),
+      /Location data could not be read/,
+    );
+  });
+
   it("converts upstream HTTP failures into a safe service error", async () => {
     const service = createLgdService(async () => new Response("private upstream detail", { status: 500 }));
 
