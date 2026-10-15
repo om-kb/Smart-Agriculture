@@ -1,4 +1,5 @@
 import type { District, LocationSelection } from "./lgd/types.ts";
+import type { GeocodingResult, LocationSource } from "./location/types.ts";
 
 export const LOCATION_STORAGE_KEY = "smart-agriculture-location";
 
@@ -15,6 +16,26 @@ export const emptyLocationSelection: LocationSelectionState = {
   subdistrict: "",
   block: "",
 };
+
+export interface CoordinateSelectionDraft {
+  results: GeocodingResult[];
+  selectedResult: GeocodingResult | null;
+  latitude: string;
+  longitude: string;
+  source: LocationSource;
+  confirmed: boolean;
+}
+
+export function emptyCoordinateSelectionDraft(): CoordinateSelectionDraft {
+  return {
+    results: [],
+    selectedResult: null,
+    latitude: "",
+    longitude: "",
+    source: "manual",
+    confirmed: false,
+  };
+}
 
 export function createRequestSequence() {
   let currentRequestId = 0;

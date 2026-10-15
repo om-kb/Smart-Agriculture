@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   classifyIntent,
   editDistanceAtMostOne,
+  extractForecastTemporalIntent,
   extractEntities,
 } from "./classifier.ts";
 import { KNOWLEDGE_BASE } from "./knowledge/index.ts";
@@ -44,6 +45,35 @@ describe("rule-based intent classification", () => {
       soilTypes: ["sandy"],
       weatherConcepts: ["rainfall"],
     });
+  });
+
+  it("classifies rainfall questions and extracts their requested forecast date", () => {
+    const cases = [
+      ["Will it rain today?", { kind: "today" }],
+      ["Will it rain tonight?", { kind: "tonight" }],
+      ["Will it rain tomorrow?", { kind: "tomorrow" }],
+      [
+        "Will it rain the day after tomorrow?",
+        { kind: "day-after-tomorrow" },
+      ],
+      [
+        "Will it rain on 17 October 2026?",
+        { kind: "explicit-date", day: 17, month: 10, year: 2026 },
+      ],
+      [
+        "Rain forecast for October 18",
+        { kind: "explicit-date", day: 18, month: 10, year: undefined },
+      ],
+      [
+        "Rain forecast for 2026-10-19",
+        { kind: "explicit-date", day: 19, month: 10, year: 2026 },
+      ],
+    ] as const;
+
+    for (const [question, expected] of cases) {
+      assert.deepEqual(extractForecastTemporalIntent(question), expected);
+      assert.equal(classifyIntent(question).intent, "weather.forecast", question);
+    }
   });
 
   it("returns safe states for ambiguity, unrelated input, and empty text", () => {

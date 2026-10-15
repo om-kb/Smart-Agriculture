@@ -27,7 +27,9 @@ export function parseFarmLocation(value: unknown): FarmLocation | null {
     typeof value.latitude !== "number" ||
     typeof value.longitude !== "number" ||
     !isValidCoordinates(value.latitude, value.longitude) ||
-    (value.source !== "manual" && value.source !== "open-meteo") ||
+    (value.source !== "manual" &&
+      value.source !== "openstreetmap" &&
+      value.source !== "open-meteo") ||
     typeof value.coordinatesConfirmed !== "boolean" ||
     !isOptionalString(value.state) ||
     !isOptionalString(value.district) ||
@@ -74,28 +76,13 @@ export function buildGeocodingQuery(district: string, state: string): string {
   return qualifiedQuery.length <= 160 ? qualifiedQuery : districtName;
 }
 
-export function parseGeocodingResults(value: unknown): GeocodingResult[] {
-  if (!isRecord(value) || !Array.isArray(value.results)) {
-    throw new Error("Location search returned an invalid response.");
-  }
-
-  return parseGeocodingItems(value.results, "upstream");
-}
-
 export function parseGeocodingRouteResponse(
   value: unknown,
 ): GeocodingResult[] {
   if (!isRecord(value) || !Array.isArray(value.data)) {
     throw new Error("Location search returned an invalid response.");
   }
-  return parseGeocodingItems(value.data, "route");
-}
-
-function parseGeocodingItems(
-  items: unknown[],
-  source: "upstream" | "route",
-): GeocodingResult[] {
-  return items.flatMap((item): GeocodingResult[] => {
+  return value.data.flatMap((item): GeocodingResult[] => {
     if (
       !isRecord(item) ||
       typeof item.name !== "string" ||
@@ -104,34 +91,131 @@ function parseGeocodingItems(
       typeof item.latitude !== "number" ||
       typeof item.longitude !== "number" ||
       !isValidCoordinates(item.latitude, item.longitude) ||
-      !isOptionalBoundedString(source === "upstream" ? item.admin1 : item.state, 160) ||
-      !isOptionalBoundedString(source === "upstream" ? item.admin2 : item.district, 160) ||
-      !isOptionalBoundedString(item.country, 100)
+      !isOptionalBoundedString(item.state, 160) ||
+      !isOptionalBoundedString(item.district, 160) ||
+      !isOptionalBoundedString(item.country, 100) ||
+      (item.provider !== undefined && item.provider !== "openstreetmap")
     ) {
       return [];
     }
-    const state = source === "upstream" ? item.admin1 : item.state;
-    const district = source === "upstream" ? item.admin2 : item.district;
     return [
       {
         name: item.name.trim(),
         latitude: item.latitude,
         longitude: item.longitude,
-        ...(typeof state === "string" ? { state } : {}),
-        ...(typeof district === "string" ? { district } : {}),
+        ...(typeof item.state === "string" ? { state: item.state } : {}),
+        ...(typeof item.district === "string"
+          ? { district: item.district }
+          : {}),
         ...(typeof item.country === "string" ? { country: item.country } : {}),
+        ...(item.provider === "openstreetmap"
+          ? { provider: item.provider }
+          : {}),
+      },
+    ];
+  });
+}
+
+export function parseNominatimResults(value: unknown): GeocodingResult[] {
+  if (!Array.isArray(value)) {
+    throw new Error("Location search returned an invalid response.");
+  }
+
+  return value.flatMap((item): GeocodingResult[] => {
+    if (
+      !isRecord(item) ||
+      !isRecord(item.address) ||
+      typeof item.lat !== "string" ||
+      typeof item.lon !== "string"
+    ) {
+      return [];
+    }
+    const latitude = Number(item.lat);
+    const longitude = Number(item.lon);
+    const name =
+      (typeof item.name === "string" && item.name.trim()) ||
+      (typeof item.display_name === "string"
+        ? item.display_name.split(",")[0]?.trim()
+        : undefined);
+    const address = item.address;
+    const district =
+      firstAddressString(address, [
+        "state_district",
+        "county",
+        "district",
+        "city_district",
+      ]) ??
+      (item.addresstype === "state_district"
+        ? firstAddressString(address, ["city", "municipality"])
+        : undefined);
+    const state = firstAddressString(address, ["state"]);
+    const country = firstAddressString(address, ["country"]);
+    if (
+      !name ||
+      name.length > 160 ||
+      !isValidCoordinates(latitude, longitude) ||
+      (district !== undefined && district.length > 160) ||
+      (state !== undefined && state.length > 160) ||
+      (country !== undefined && country.length > 100)
+    ) {
+      return [];
+    }
+    return [
+      {
+        name,
+        latitude,
+        longitude,
+        ...(state ? { state } : {}),
+        ...(district ? { district } : {}),
+        ...(country ? { country } : {}),
+        provider: "openstreetmap",
       },
     ];
   });
 }
 
 function normalizeAreaName(value: string | undefined): string {
-  return (value ?? "")
+  const normalized = (value ?? "")
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
     .toLocaleLowerCase("en")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+  const aliases: Record<string, string> = {
+    "bangalore": "bengaluru urban",
+    "bangalore urban": "bengaluru urban",
+    "bangaluru urban": "bengaluru urban",
+    "bengaluru": "bengaluru urban",
+    "udipi": "udupi",
+    "wynaad": "wayanad",
+    "palghat": "palakkad",
+    "poona": "pune",
+    "orissa": "odisha",
+    "pondicherry": "puducherry",
+  };
+  const withoutDistrict = normalized.replace(/\s+district$/, "");
+  return aliases[withoutDistrict] ?? withoutDistrict;
+}
+
+function firstAddressString(
+  address: Record<string, unknown>,
+  keys: readonly string[],
+): string | undefined {
+  for (const key of keys) {
+    const value = address[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+export function isValidIndiaCoordinates(latitude: number, longitude: number) {
+  return (
+    isValidCoordinates(latitude, longitude) &&
+    latitude >= 6 &&
+    latitude <= 38 &&
+    longitude >= 68 &&
+    longitude <= 98
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

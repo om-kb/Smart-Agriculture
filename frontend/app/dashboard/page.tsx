@@ -176,9 +176,9 @@ export default function DashboardPage() {
                   {location.name} · {location.latitude}, {location.longitude}
                 </p>
                 <p className="mt-1 text-sm text-emerald-200">
-                  {location.source === "open-meteo"
-                    ? "Approximate forecast location, confirmed by you"
-                    : "Manual coordinates, confirmed by you"}
+                  {location.source === "manual"
+                    ? "Manual coordinates, confirmed by you"
+                    : "Approximate geocoded location, confirmed by you"}
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">

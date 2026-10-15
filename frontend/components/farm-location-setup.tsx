@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createRequestSequence,
+  emptyCoordinateSelectionDraft,
   emptyLocationSelection,
   filterDistrictsForState,
   LOCATION_STORAGE_KEY as LGD_LOCATION_STORAGE_KEY,
@@ -34,7 +35,7 @@ import {
 } from "@/lib/location/storage";
 import {
   buildGeocodingQuery,
-  isValidCoordinates,
+  isValidIndiaCoordinates,
   matchGeocodingAdministrativeArea,
   parseGeocodingRouteResponse,
 } from "@/lib/location/validation";
@@ -70,7 +71,8 @@ export default function FarmLocationSetup() {
   const [locationSearchError, setLocationSearchError] = useState("");
   const districtRequestId = useRef(createRequestSequence());
   const detailRequestId = useRef(createRequestSequence());
-  const searchRequestId = useRef(0);
+  const searchRequestSequence = useRef(createRequestSequence());
+  const searchController = useRef<AbortController | null>(null);
 
   const selectedState = states.find((state) => state.code === selection.state);
   const visibleDistricts = useMemo(
@@ -85,7 +87,7 @@ export default function FarmLocationSetup() {
   const coordinatesValid =
     latitude.trim().length > 0 &&
     longitude.trim().length > 0 &&
-    isValidCoordinates(numericLatitude, numericLongitude);
+    isValidIndiaCoordinates(numericLatitude, numericLongitude);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -285,13 +287,16 @@ export default function FarmLocationSetup() {
   }, []);
 
   const resetCoordinates = useCallback(() => {
-    searchRequestId.current += 1;
-    setLocationResults([]);
-    setSelectedResult(null);
-    setLatitude("");
-    setLongitude("");
-    setCoordinatesSource("manual");
-    setCoordinatesConfirmed(false);
+    searchRequestSequence.current.next();
+    searchController.current?.abort();
+    searchController.current = null;
+    const emptyCoordinates = emptyCoordinateSelectionDraft();
+    setLocationResults(emptyCoordinates.results);
+    setSelectedResult(emptyCoordinates.selectedResult);
+    setLatitude(emptyCoordinates.latitude);
+    setLongitude(emptyCoordinates.longitude);
+    setCoordinatesSource(emptyCoordinates.source);
+    setCoordinatesConfirmed(emptyCoordinates.confirmed);
     setLocationSearchLoad("idle");
     setLocationSearchError("");
   }, []);
@@ -404,15 +409,18 @@ export default function FarmLocationSetup() {
 
   async function searchCoordinates(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const requestId = ++searchRequestId.current;
+    const requestId = searchRequestSequence.current.next();
+    searchController.current?.abort();
+    searchController.current = null;
     const query = locationQuery.trim();
     setLocationSearchError("");
-    setLocationResults([]);
-    setSelectedResult(null);
-    setLatitude("");
-    setLongitude("");
-    setCoordinatesSource("manual");
-    setCoordinatesConfirmed(false);
+    const emptyCoordinates = emptyCoordinateSelectionDraft();
+    setLocationResults(emptyCoordinates.results);
+    setSelectedResult(emptyCoordinates.selectedResult);
+    setLatitude(emptyCoordinates.latitude);
+    setLongitude(emptyCoordinates.longitude);
+    setCoordinatesSource(emptyCoordinates.source);
+    setCoordinatesConfirmed(emptyCoordinates.confirmed);
     if (!selectedState || !selectedDistrict) {
       setLocationSearchError("Choose a state and district before finding coordinates.");
       return;
@@ -422,10 +430,18 @@ export default function FarmLocationSetup() {
       return;
     }
 
+    const controller = new AbortController();
+    searchController.current = controller;
     setLocationSearchLoad("loading");
     try {
+      const parameters = new URLSearchParams({
+        q: query,
+        district: selectedDistrict.name,
+        state: selectedState.name,
+      });
       const response = await fetch(
-        `/api/location-search?q=${encodeURIComponent(query)}`,
+        `/api/location-search?${parameters.toString()}`,
+        { cache: "no-store", signal: controller.signal },
       );
       const payload: unknown = await response.json();
       if (!response.ok) {
@@ -436,16 +452,25 @@ export default function FarmLocationSetup() {
         throw new Error(message);
       }
       const results = parseGeocodingRouteResponse(payload);
-      if (requestId === searchRequestId.current) {
+      if (searchRequestSequence.current.isCurrent(requestId)) {
         setLocationResults(results);
+        if (results.length === 0) {
+          setLocationSearchError(
+            "No exact result was found in the selected district and state. Try a local spelling or enter coordinates manually.",
+          );
+        }
       }
     } catch (searchError) {
-      if (requestId === searchRequestId.current) {
+      if (
+        searchRequestSequence.current.isCurrent(requestId) &&
+        !controller.signal.aborted
+      ) {
         setLocationSearchError(getErrorMessage(searchError));
       }
     } finally {
-      if (requestId === searchRequestId.current) {
+      if (searchRequestSequence.current.isCurrent(requestId)) {
         setLocationSearchLoad("idle");
+        searchController.current = null;
       }
     }
   }
@@ -457,7 +482,7 @@ export default function FarmLocationSetup() {
       matchGeocodingAdministrativeArea(result, {
         state: stateName,
         district: districtName,
-      }) === "mismatch" ||
+      }) !== "match" ||
       (result.country && normalizeName(result.country) !== "india")
     ) {
       return;
@@ -465,7 +490,7 @@ export default function FarmLocationSetup() {
     setSelectedResult(result);
     setLatitude(String(result.latitude));
     setLongitude(String(result.longitude));
-    setCoordinatesSource("open-meteo");
+    setCoordinatesSource("openstreetmap");
     setCoordinatesConfirmed(false);
   }
 
@@ -608,8 +633,8 @@ export default function FarmLocationSetup() {
               Find forecast coordinates
             </h2>
             <p className="mt-2 text-sm leading-6 text-stone-600">
-              Search is prefilled with your selected district and state. Results
-              are approximate; conflicting administrative matches cannot be selected.
+              Search uses your selected district and state, and only exact
+              administrative matches can be selected. All results are approximate.
             </p>
             <form className="mt-4" onSubmit={(event) => void searchCoordinates(event)}>
               <label className="text-sm font-semibold" htmlFor="coordinate-search">
@@ -690,22 +715,12 @@ export default function FarmLocationSetup() {
                 })}
               </ul>
             )}
-            {locationResults.length === 0 &&
-              locationSearchLoad === "idle" &&
-              !locationSearchError &&
-              selectedDistrict && (
-                <p className="mt-3 text-sm text-stone-500">
-                  If the geocoder has no matching place, enter coordinates
-                  manually below.
-                </p>
-              )}
-
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <CoordinateInput
                 id="latitude"
                 label="Latitude"
-                min="-90"
-                max="90"
+                min="6"
+                max="38"
                 value={latitude}
                 onChange={(value) => {
                   setLatitude(value);
@@ -716,8 +731,8 @@ export default function FarmLocationSetup() {
               <CoordinateInput
                 id="longitude"
                 label="Longitude"
-                min="-180"
-                max="180"
+                min="68"
+                max="98"
                 value={longitude}
                 onChange={(value) => {
                   setLongitude(value);
@@ -744,6 +759,24 @@ export default function FarmLocationSetup() {
                 </p>
               )}
             </div>
+            <p className="mt-3 text-sm leading-6 text-stone-600">
+              If no exact result is available, enter coordinates manually. They
+              must fall within India&apos;s approximate bounds; review them and
+              confirm they identify your selected district before continuing.
+            </p>
+            <p className="mt-2 text-xs text-stone-500">
+              Geocoding by{" "}
+              <a
+                className="underline underline-offset-2"
+                href="https://www.openstreetmap.org/copyright"
+                rel="noreferrer"
+                target="_blank"
+              >
+                © OpenStreetMap contributors
+              </a>
+              . Searches are sent only when you submit this form and are cached
+              to reduce repeat requests.
+            </p>
           </section>
 
           {error && (
@@ -771,9 +804,9 @@ export default function FarmLocationSetup() {
           </button>
           <p className="mt-5 text-xs leading-5 text-stone-500">
             Location selections and confirmed coordinates are saved in this
-            browser. Only your place-name query and confirmed coordinates are
-            sent to Open-Meteo; official LGD codes are never treated as
-            coordinates.
+            browser. Place-name searches are sent to OpenStreetMap Nominatim;
+            confirmed coordinates are sent to Open-Meteo. Official LGD codes
+            are never treated as coordinates.
           </p>
         </section>
       </div>

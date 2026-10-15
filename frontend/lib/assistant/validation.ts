@@ -99,6 +99,7 @@ function validateWeatherContext(value: unknown): value is WeatherContext {
     isRecord(value) &&
     hasOnlyKeys(value, [
       "timezone",
+      "locationKey",
       "currentTemperatureC",
       "currentHumidityPercent",
       "currentWindSpeedKmh",
@@ -106,6 +107,7 @@ function validateWeatherContext(value: unknown): value is WeatherContext {
       "source",
     ]) &&
     optionalTimezone(value.timezone) &&
+    optionalString(value.locationKey, 500) &&
     optionalNumber(value.currentTemperatureC, -100, 70) &&
     optionalNumber(value.currentHumidityPercent, 0, 100) &&
     optionalNumber(value.currentWindSpeedKmh, 0, 500) &&
@@ -152,8 +154,9 @@ function optionalTimezone(value: unknown): value is string | undefined {
 function validateLocationContext(value: unknown): value is LocationContext {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ["displayName", "state", "district"]) &&
+    hasOnlyKeys(value, ["displayName", "locationKey", "state", "district"]) &&
     optionalString(value.displayName, 200) &&
+    optionalString(value.locationKey, 500) &&
     optionalString(value.state, 160) &&
     optionalString(value.district, 160)
   );
@@ -237,6 +240,15 @@ export function validateChatRequest(value: unknown): ValidationResult {
       };
     }
     request.recentTurns = value.recentTurns;
+  }
+  if (
+    request.weatherContext?.locationKey !== undefined &&
+    request.locationContext?.locationKey !== request.weatherContext.locationKey
+  ) {
+    return {
+      valid: false,
+      error: "Weather context does not match the selected location.",
+    };
   }
 
   return { valid: true, value: request };

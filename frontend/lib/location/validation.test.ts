@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildGeocodingQuery,
+  isValidIndiaCoordinates,
   isValidCoordinates,
   matchGeocodingAdministrativeArea,
   parseFarmLocation,
-  parseGeocodingResults,
+  parseNominatimResults,
   parseGeocodingRouteResponse,
 } from "./validation.ts";
 import { deserializeLocation, serializeLocation } from "./storage.ts";
@@ -26,6 +27,8 @@ describe("location validation and persistence", () => {
     assert.equal(isValidCoordinates(90.1, 0), false);
     assert.equal(isValidCoordinates(0, -181), false);
     assert.equal(isValidCoordinates(Number.NaN, 0), false);
+    assert.equal(isValidIndiaCoordinates(13.5, 74.8), true);
+    assert.equal(isValidIndiaCoordinates(13.5, 105), false);
   });
 
   it("safely serializes and restores a confirmed manual location", () => {
@@ -53,7 +56,7 @@ describe("location validation and persistence", () => {
         subdistrict: { code: "2660", name: "Ambalappuzha" },
         block: { code: "6716", name: "Ambalappuzha" },
       },
-      source: "open-meteo" as const,
+      source: "openstreetmap" as const,
       coordinatesConfirmed: true,
     };
     assert.deepEqual(
@@ -95,26 +98,59 @@ describe("location validation and persistence", () => {
       ),
       "mismatch",
     );
+    for (const [districtAlias, district] of [
+      ["Udipi", "Udupi"],
+      ["Wynaad District", "Wayanad"],
+      ["Palghat", "Palakkad"],
+      ["Poona", "Pune"],
+      ["Bangalore Urban", "Bengaluru Urban"],
+    ]) {
+      assert.equal(
+        matchGeocodingAdministrativeArea(
+          {
+            name: districtAlias,
+            state: "Karnataka",
+            district: districtAlias,
+            latitude: 13,
+            longitude: 74,
+          },
+          { state: "Karnataka", district },
+        ),
+        "match",
+        districtAlias,
+      );
+    }
   });
 
-  it("filters malformed geocoder results and handles failed responses", () => {
+  it("parses Nominatim address details and filters malformed results", () => {
     assert.deepEqual(
-      parseGeocodingResults({
-        results: [
+      parseNominatimResults([
           { name: "Pune", latitude: 18.52, longitude: 73.85, admin1: "Maharashtra" },
-          { name: "Invalid", latitude: 100, longitude: 0 },
-        ],
-      }),
+          {
+            name: "Pune District",
+            lat: "18.52",
+            lon: "73.85",
+            addresstype: "state_district",
+            address: {
+              state_district: "Pune",
+              state: "Maharashtra",
+              country: "India",
+            },
+          },
+          { name: "Invalid", lat: "100", lon: "0", address: {} },
+        ]),
       [
         {
-          name: "Pune",
+          name: "Pune District",
           latitude: 18.52,
           longitude: 73.85,
           state: "Maharashtra",
+          district: "Pune",
+          country: "India",
+          provider: "openstreetmap",
         },
       ],
     );
-    assert.throws(() => parseGeocodingResults({}), /invalid response/i);
     assert.deepEqual(
       parseGeocodingRouteResponse({
         data: [

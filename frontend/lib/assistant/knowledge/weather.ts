@@ -25,8 +25,8 @@ export const weatherKnowledge = [
     id: "weather.forecast",
     category: "weather",
     title: "Forecast, rainfall, and seven-day outlook",
-    supportedPatterns: ["weather tomorrow", "weather forecast", "rain forecast", "rainfall forecast", "expected rainfall", "how much rain", "seven day forecast", "7 day weather", "will it rain", "forecast for tomorrow"],
-    synonyms: ["rain prediction", "weekly weather", "expected rain", "tomorrows weather"],
+    supportedPatterns: ["weather tomorrow", "weather forecast", "rain forecast", "rainfall forecast", "expected rainfall", "how much rain", "seven day forecast", "7 day weather", "will it rain", "forecast for tomorrow", "will it rain today", "will it rain tomorrow", "will it rain the day after tomorrow", "rain today", "rain tomorrow", "rain day after tomorrow", "rain on"],
+    synonyms: ["rain prediction", "weekly weather", "expected rain", "tomorrows weather", "rain tonight"],
     keywords: ["forecast", "rainfall", "tomorrow", "rain", "weekly"],
     answer:
       "I can summarize forecast values only when forecast context is supplied. Rain forecasts are uncertain and do not confirm how much rain will reach a particular field.",

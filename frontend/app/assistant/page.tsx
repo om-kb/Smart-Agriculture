@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { AssistantChat } from "@/components/assistant-chat";
 import {
   FARM_PROFILE_STORAGE_KEY,
@@ -12,7 +19,12 @@ import {
   LOCATION_UPDATED_EVENT,
   deserializeLocation,
 } from "@/lib/location/storage";
-import { createAssistantRequestContext } from "@/lib/assistant/integration-context";
+import {
+  assistantLocationKey,
+  createAssistantRequestContext,
+  createWeatherRequestSequence,
+  isWeatherSnapshotForLocation,
+} from "@/lib/assistant/integration-context";
 import type { WeatherData } from "@/lib/weather/types";
 import { isWeatherData } from "@/lib/weather/validation";
 
@@ -46,14 +58,20 @@ export default function AssistantPage() {
     () => deserializeFarmProfile(storedProfile),
     [storedProfile],
   );
-  const locationKey = location
-    ? `${location.latitude},${location.longitude}`
-    : "";
+  const locationKey = assistantLocationKey(location);
+  const locationKeyRef = useRef(locationKey);
+  const weatherRequests = useRef(createWeatherRequestSequence());
   const [weatherSnapshot, setWeatherSnapshot] =
     useState<WeatherSnapshot | null>(null);
   const [failedWeatherKey, setFailedWeatherKey] = useState("");
 
+  useLayoutEffect(() => {
+    locationKeyRef.current = locationKey;
+  }, [locationKey]);
+
   useEffect(() => {
+    const requests = weatherRequests.current;
+    const requestId = requests.next();
     if (!location?.coordinatesConfirmed) return;
     const selectedLocation = location;
     const controller = new AbortController();
@@ -73,24 +91,46 @@ export default function AssistantPage() {
         ) {
           throw new Error("Weather context is unavailable.");
         }
+        if (
+          controller.signal.aborted ||
+          !requests.isCurrent(requestId) ||
+          locationKeyRef.current !== requestKey
+        ) {
+          return;
+        }
         setWeatherSnapshot({ key: requestKey, data: payload.data });
         setFailedWeatherKey("");
       } catch {
-        if (!controller.signal.aborted) {
+        if (
+          !controller.signal.aborted &&
+          requests.isCurrent(requestId) &&
+          locationKeyRef.current === requestKey
+        ) {
           setFailedWeatherKey(requestKey);
         }
       }
     }
 
     void loadWeather();
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      requests.next();
+    };
   }, [location, locationKey]);
 
   const weather =
-    weatherSnapshot?.key === locationKey ? weatherSnapshot.data : null;
+    isWeatherSnapshotForLocation(location, weatherSnapshot?.key)
+      ? weatherSnapshot?.data ?? null
+      : null;
   const context = useMemo(
-    () => createAssistantRequestContext(location, profile, weather),
-    [location, profile, weather],
+    () =>
+      createAssistantRequestContext(
+        location,
+        profile,
+        weather,
+        weatherSnapshot?.key,
+      ),
+    [location, profile, weather, weatherSnapshot?.key],
   );
   const contextNotice = !location
     ? "No confirmed location is saved. Choose your area to add weather context."
@@ -102,7 +142,13 @@ export default function AssistantPage() {
         ? `Using ${location.name} and your validated saved farm profile. Weather could not be loaded for this reply.`
         : `Using ${location.name} and your validated saved farm profile. Loading current weather context…`;
 
-  return <AssistantChat context={context} contextNotice={contextNotice} />;
+  return (
+    <AssistantChat
+      key={locationKey}
+      context={context}
+      contextNotice={contextNotice}
+    />
+  );
 }
 
 function subscribeToStorage(

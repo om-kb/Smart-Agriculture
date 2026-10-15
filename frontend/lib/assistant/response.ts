@@ -1,4 +1,8 @@
-import { classifyIntent, extractEntities } from "./classifier.ts";
+import {
+  classifyIntent,
+  extractEntities,
+  extractForecastTemporalIntent,
+} from "./classifier.ts";
 import { getKnowledgeEntry } from "./knowledge/index.ts";
 import type {
   ChatRequest,
@@ -57,20 +61,98 @@ function localDateInTimezone(now: Date, timezone: string): string | null {
   }
 }
 
-function tomorrowDate(now: Date, timezone?: string): string | null {
-  if (!timezone) return null;
-  const localToday = localDateInTimezone(now, timezone);
-  if (!localToday) return null;
-  const tomorrow = new Date(`${localToday}T00:00:00.000Z`);
-  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-  return tomorrow.toISOString().slice(0, 10);
+function addCalendarDays(date: string, days: number): string {
+  const result = new Date(`${date}T00:00:00.000Z`);
+  result.setUTCDate(result.getUTCDate() + days);
+  return result.toISOString().slice(0, 10);
 }
 
-function tomorrowForecast(
+function readableForecastDate(date: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T00:00:00.000Z`));
+}
+
+interface ForecastTarget {
+  date: string | null;
+  label: string;
+  kind: "daily" | "tonight";
+}
+
+function forecastTarget(
+  message: string,
   context: WeatherContext | undefined,
   now: Date,
+): ForecastTarget {
+  const intent = extractForecastTemporalIntent(message);
+  if (intent.kind === "tonight") {
+    const today = context?.timezone
+      ? localDateInTimezone(now, context.timezone)
+      : null;
+    return {
+      date: today,
+      label: today ? `tonight (${readableForecastDate(today)})` : "tonight",
+      kind: "tonight",
+    };
+  }
+
+  if (intent.kind === "explicit-date") {
+    const localToday = context?.timezone
+      ? localDateInTimezone(now, context.timezone)
+      : null;
+    const year = intent.year ?? Number(localToday?.slice(0, 4));
+    if (!year || !isValidCalendarDate(year, intent.month, intent.day)) {
+      return { date: null, label: "that date", kind: "daily" };
+    }
+    const date = `${year}-${String(intent.month).padStart(2, "0")}-${String(intent.day).padStart(2, "0")}`;
+    return {
+      date,
+      label: readableForecastDate(date),
+      kind: "daily",
+    };
+  }
+
+  const today = context?.timezone
+    ? localDateInTimezone(now, context.timezone)
+    : null;
+  if (!today) {
+    return {
+      date: null,
+      label: intent.kind === "unspecified" ? "tomorrow" : intent.kind,
+      kind: "daily",
+    };
+  }
+  const offset =
+    intent.kind === "today"
+      ? 0
+      : intent.kind === "day-after-tomorrow"
+        ? 2
+        : 1;
+  const date = addCalendarDays(today, offset);
+  const label =
+    intent.kind === "today"
+      ? "today"
+      : intent.kind === "day-after-tomorrow"
+        ? "the day after tomorrow"
+        : "tomorrow";
+  return { date, label, kind: "daily" };
+}
+
+function isValidCalendarDate(year: number, month: number, day: number): boolean {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function forecastForDate(
+  context: WeatherContext | undefined,
+  date: string | null,
 ): NonNullable<WeatherContext["dailyForecasts"]>[number] | undefined {
-  const date = context ? tomorrowDate(now, context.timezone) : null;
   return date
     ? context?.dailyForecasts?.find((forecast) => forecast.date === date)
     : undefined;
@@ -126,55 +208,62 @@ function forecastWeatherAnswer(
   now: Date,
 ): { answer: string; used: boolean } {
   const location =
-    request.locationContext?.displayName ??
     request.locationContext?.district ??
+    request.locationContext?.displayName ??
     request.locationContext?.state ??
     "your selected area";
-  const forecast = tomorrowForecast(context, now);
+  const target = forecastTarget(request.message, context, now);
   const source = context?.source ? ` Source: ${context.source}.` : "";
-  if (!forecast) {
+  if (target.kind === "tonight") {
     return {
-      answer: `I don't have tomorrow's forecast for ${location} available right now. Check the latest local forecast before making irrigation decisions.${source}`,
+      answer: `I don't have an hourly forecast for ${location} ${target.label}. Daily forecasts cannot show whether rain will fall specifically tonight.${source}`,
+      used: false,
+    };
+  }
+  if (!target.date) {
+    return {
+      answer: `I can't determine the requested local forecast date for ${location} because its timezone or date is unavailable.${source}`,
       used: false,
     };
   }
 
-  const details: string[] = [];
-  if (forecast.precipitationMm !== undefined) {
-    details.push(
-      `approximately ${formatWeatherNumber(forecast.precipitationMm)} mm of rain is forecast`,
-    );
-  }
-  if (forecast.precipitationProbabilityPercent !== undefined) {
-    details.push(
-      `the forecast rain probability is ${formatWeatherNumber(forecast.precipitationProbabilityPercent)}%`,
-    );
-  }
-  if (
-    forecast.maxTemperatureC !== undefined &&
-    forecast.minTemperatureC !== undefined
-  ) {
-    details.push(
-      `temperatures near ${formatWeatherNumber(forecast.minTemperatureC)}–${formatWeatherNumber(forecast.maxTemperatureC)} °C are forecast`,
-    );
-  }
-  if (forecast.maxWindSpeedKmh !== undefined) {
-    details.push(
-      `maximum wind near ${formatWeatherNumber(forecast.maxWindSpeedKmh)} km/h is forecast`,
-    );
-  }
-  if (!details.length) {
+  const forecast = forecastForDate(context, target.date);
+  if (!forecast) {
+    const dates = context?.dailyForecasts?.map((item) => item.date) ?? [];
+    const firstDate = dates.length ? dates.reduce((a, b) => (a < b ? a : b)) : null;
+    const lastDate = dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null;
+    const range =
+      firstDate && lastDate
+        ? ` The available daily forecast covers ${readableForecastDate(firstDate)} to ${readableForecastDate(lastDate)}.`
+        : "";
     return {
-      answer: `Tomorrow's forecast for ${location} is available, but rainfall details are not. I can't estimate rain without that information.${source}`,
+      answer: `I don't have a forecast for ${location} on ${readableForecastDate(target.date)}.${range} Check the latest local forecast before making irrigation decisions.${source}`,
       used: false,
     };
   }
-  const answer =
-    forecast.precipitationMm !== undefined
-      ? `${forecast.precipitationMm === 0 && forecast.precipitationProbabilityPercent === undefined ? "No rain is forecast" : "Rain is forecast"} for ${location} tomorrow, with approximately ${formatWeatherNumber(forecast.precipitationMm)} mm expected.${forecast.precipitationProbabilityPercent === undefined ? "" : ` The forecast rain probability is ${formatWeatherNumber(forecast.precipitationProbabilityPercent)}%.`} Actual rainfall at your farm may differ.`
-      : forecast.precipitationProbabilityPercent !== undefined
-        ? `Rain probability for ${location} tomorrow is forecast at ${formatWeatherNumber(forecast.precipitationProbabilityPercent)}%. Actual rainfall at your farm may differ.`
-        : `Tomorrow's forecast for ${location}: ${details.join("; ")}. Actual conditions at your farm may differ.`;
+
+  const readableDate = readableForecastDate(target.date);
+  if (
+    forecast.precipitationMm === undefined &&
+    forecast.precipitationProbabilityPercent === undefined
+  ) {
+    return {
+      answer: `Rainfall details are not available for ${location} on ${readableDate}; I can't estimate them.${source}`,
+      used: false,
+    };
+  }
+  let answer: string;
+  if (forecast.precipitationMm !== undefined) {
+    const probability =
+      forecast.precipitationProbabilityPercent === undefined
+        ? ""
+        : ` with ${formatWeatherNumber(forecast.precipitationProbabilityPercent)}% probability`;
+    answer = `For ${location} on ${readableDate}, the forecast indicates approximately ${formatWeatherNumber(forecast.precipitationMm)} mm of rain${probability}. Actual rainfall at your farm may differ.`;
+  } else if (forecast.precipitationProbabilityPercent !== undefined) {
+    answer = `For ${location} on ${readableDate}, the forecast gives a ${formatWeatherNumber(forecast.precipitationProbabilityPercent)}% chance of rain. Actual rainfall at your farm may differ.`;
+  } else {
+    answer = `Rainfall details are not available for ${location} on ${readableDate}; I can't estimate them.`;
+  }
   return { answer: `${answer}${source}`, used: true };
 }
 
@@ -190,12 +279,16 @@ function missingForTopic(
   now: Date,
 ): string[] {
   const missing: string[] = [];
+  const target = forecastTarget(request.message, request.weatherContext, now);
+  const requestedForecast = forecastForDate(
+    request.weatherContext,
+    target.date,
+  );
   if (topicId.startsWith("irrigation.")) {
     if (!request.farmContext?.crop) missing.push("crop");
     if (!request.farmContext?.growthStage) missing.push("growth stage");
     if (
-      tomorrowForecast(request.weatherContext, now)?.precipitationMm ===
-      undefined
+      requestedForecast?.precipitationMm === undefined
     ) {
       missing.push("recent rainfall or a local rainfall forecast");
     }
@@ -216,11 +309,15 @@ function missingForTopic(
   }
   if (
     topicId === "weather.forecast" &&
-    tomorrowForecast(request.weatherContext, now)?.precipitationMm === undefined &&
-    tomorrowForecast(request.weatherContext, now)
-      ?.precipitationProbabilityPercent === undefined
+    (target.kind === "tonight" ||
+      requestedForecast?.precipitationMm === undefined &&
+        requestedForecast?.precipitationProbabilityPercent === undefined)
   ) {
-    missing.push("tomorrow's rainfall forecast");
+    missing.push(
+      target.kind === "tonight"
+        ? "an hourly forecast for tonight"
+        : `rainfall forecast for ${target.date ? readableForecastDate(target.date) : target.label}`,
+    );
   }
   if (
     topicId === "crop.suitability" &&

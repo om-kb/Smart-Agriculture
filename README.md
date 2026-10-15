@@ -13,12 +13,12 @@ A farmer-friendly web application that combines official Indian administrative-a
 ## Farmer journey
 
 1. **Homepage (`/`)** links into setup and the assistant.
-2. **Location (`/setup`)** selects State/UT and district from the Indian Local Government Directory (LGD); sub-district and development block are optional and independent selections. State and district help form an Open-Meteo Geocoding query. Candidates that conflict with the selected state or district cannot be used; incomplete geocoding matches require explicit confirmation. Farmers can correct or enter coordinates manually and must confirm them.
+2. **Location (`/setup`)** selects State/UT and district from the Indian Local Government Directory (LGD); sub-district and development block are optional and independent selections. The selected state and district qualify a place-name search through OpenStreetMap Nominatim. Only exact state/district matches can be selected; farmers can instead enter coordinates manually and must confirm them.
 3. **Farm profile (`/farm`)** optionally saves farm size, crop, soil type, irrigation method, growth stage, and sowing date.
 4. **Weather dashboard (`/dashboard`)** fetches current weather and a seven-day forecast using the confirmed coordinates, shows the retained LGD codes, farm profile, and general deterministic weather advisories, and links to location/profile editing and the assistant.
 5. **Assistant (`/assistant`)** receives only validated saved location/profile values and current weather fetched for the saved coordinates. It is deterministic, English-only, and does not call an LLM.
 
-The shared navigation is available on every page. Location, confirmed coordinates, farm profile, and assistant history remain in the browser's localStorage. Only the place-name query and confirmed coordinates are sent to same-origin routes that call Open-Meteo; farm details and LGD codes are not sent to weather providers.
+The shared navigation is available on every page. Location, confirmed coordinates, farm profile, and assistant history remain in the browser's localStorage. The area-qualified place-name query is sent to the same-origin Nominatim proxy; confirmed coordinates are sent to the Open-Meteo weather route. Farm details and LGD codes are not sent to external providers.
 
 ## Integrations and API routes
 
@@ -33,18 +33,18 @@ The Next.js routes proxy the keyless [India LGD API](https://india-lgd-index-api
 
 LGD codes are stored as administrative identifiers and are never interpreted as latitude or longitude. The chosen state, district, optional sub-district, and optional block are preserved with their official codes in the canonical weather-location record.
 
-### Open-Meteo
+### Location search and Open-Meteo
 
-- `GET /api/location-search?q={place}` validates the search query and proxies the [Geocoding API](https://open-meteo.com/en/docs/geocoding-api). Results are approximate. The setup page checks their reported state/district against the selected LGD area.
+- `GET /api/location-search?q={place}&district={district}&state={state}` validates the area-qualified query and proxies [OpenStreetMap Nominatim](https://nominatim.org/release-docs/latest/api/Search/). Results are filtered against the selected administrative area, and only exact state/district matches can be selected. Queries are user-triggered, cached for 24 hours, and spaced by at least one second per warm service instance. The setup page provides visible [OpenStreetMap attribution](https://www.openstreetmap.org/copyright).
 - `GET /api/weather?latitude={latitude}&longitude={longitude}` validates coordinates and proxies the [Forecast API](https://open-meteo.com/en/docs), returning normalized metric current conditions and up to seven daily forecasts. Shared cache lifetime is 30 minutes with stale-while-revalidate; provider requests time out after eight seconds.
 
-Open-Meteo is credited in the dashboard. Review the provider's current [terms](https://open-meteo.com/en/terms) before changing usage. No API keys or environment variables are required.
+Open-Meteo is credited in the dashboard. Review the providers' current [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/) and [Open-Meteo terms](https://open-meteo.com/en/terms) before changing usage. No API keys or environment variables are required.
 
 ### Rule-based farming assistant
 
 `POST /api/assistant/chat` accepts a message (up to 500 characters), at most ten recent turns, and optional validated location, farm, and weather context. The streamed body is capped at 20 KB. Responses use rule classification and curated topic notes; successful responses are `Cache-Control: no-store`.
 
-The assistant supports **35 topics** across weather, irrigation, eight crops, six soil types, farming practices, and application help. It asks clarifying questions for ambiguous or unsupported input and identifies missing context. When weather context is absent, it says that no validated weather data was available. When present, it reports only supplied measurements and identifies the provider and fetch time. Weather values are not field measurements, and contextual matching scores are not probabilities of agronomic correctness.
+The assistant supports **35 topics** across weather, irrigation, eight crops, six soil types, farming practices, and application help. It asks clarifying questions for ambiguous or unsupported input and identifies missing context. When weather context is absent, it says that no validated weather data was available. When present, it reports only supplied observations or the daily forecast for the requested local date, identifies the provider, and distinguishes forecast values from field measurements. Contextual matching scores are not probabilities of agronomic correctness.
 
 Agronomic guidance is conservative and mostly marked unverified; official portal links do not mean each answer was independently verified. The assistant does not diagnose diseases or prescribe pesticide/fertilizer dosages, irrigation quantities, or crop-specific scientific conclusions.
 
@@ -75,7 +75,8 @@ Connect the repository to Netlify and deploy the intended branch. `netlify.toml`
 
 ## Known limitations
 
-- Geocoding is approximate and administrative names may differ between the LGD and geocoder datasets. Conflicting matches are rejected; missing administrative data requires user confirmation, and manual coordinate entry remains available.
+- Geocoding is approximate and administrative names may differ between the LGD and geocoder datasets. Conflicting or ambiguous matches cannot be selected. Manual coordinates are checked against a broad India geographic envelope and require confirmation, but this does not prove they lie inside the selected district.
+- Nominatim requests are cached and rate-spaced per warm service instance. Netlify serverless instances do not share an application-wide rate limiter; keep place-name searches user-triggered and low-volume in accordance with the public service policy.
 - Forecasts and generic advisory thresholds cannot measure field conditions, soil moisture, crop health, or irrigation needs; forecasts may be incomplete or unavailable.
 - The assistant supports English only. Many agronomic notes are unverified general information; consult local agricultural extension staff and official warnings for high-impact decisions.
 - Browser data is local to that browser/device and is not synchronized across devices. Avoid entering sensitive personal information.

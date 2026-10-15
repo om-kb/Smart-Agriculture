@@ -112,6 +112,39 @@ describe("chat request validation", () => {
     );
   });
 
+  it("rejects weather context associated with another selected location", () => {
+    assert.equal(
+      validateChatRequest({
+        message: "Will it rain tomorrow?",
+        locationContext: {
+          displayName: "Wayanad, Kerala",
+          locationKey: "wayanad-request",
+        },
+        weatherContext: {
+          locationKey: "udupi-request",
+          timezone: "Asia/Kolkata",
+          dailyForecasts: [{ date: "2026-10-17", precipitationMm: 12 }],
+        },
+      }).valid,
+      false,
+    );
+    assert.equal(
+      validateChatRequest({
+        message: "Will it rain tomorrow?",
+        locationContext: {
+          displayName: "Udupi, Karnataka",
+          locationKey: "udupi-request",
+        },
+        weatherContext: {
+          locationKey: "udupi-request",
+          timezone: "Asia/Kolkata",
+          dailyForecasts: [{ date: "2026-10-17", precipitationMm: 12 }],
+        },
+      }).valid,
+      true,
+    );
+  });
+
   it("validates structured chat responses before the UI restores them", () => {
     const response = generateChatResponse({ message: "How do I test my soil?" });
     assert.equal(isChatResponse(response), true);

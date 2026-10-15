@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createAssistantRequestContext } from "./integration-context.ts";
+import {
+  assistantLocationKey,
+  createAssistantRequestContext,
+  createWeatherRequestSequence,
+  isWeatherSnapshotForLocation,
+} from "./integration-context.ts";
 import type { FarmProfile } from "../farm/types.ts";
 import type { FarmLocation } from "../location/types.ts";
 import type { WeatherData } from "../weather/types.ts";
@@ -78,46 +83,68 @@ const weather: WeatherData = {
 
 describe("assistant application context integration", () => {
   it("maps validated location, farm profile, and actual weather data", () => {
-    assert.deepEqual(createAssistantRequestContext(location, profile, weather), {
-      locationContext: {
-        displayName: "Pune, Pune, Maharashtra",
-        state: "Maharashtra",
-        district: "Pune",
+    assert.deepEqual(
+      createAssistantRequestContext(
+        location,
+        profile,
+        weather,
+        assistantLocationKey(location),
+      ),
+      {
+        locationContext: {
+          displayName: "Pune, Pune, Maharashtra",
+          locationKey: JSON.stringify([
+            18.52,
+            73.85,
+            "27",
+            "521",
+            "Pune, Pune, Maharashtra",
+          ]),
+          state: "Maharashtra",
+          district: "Pune",
+        },
+        farmContext: {
+          location: "Pune, Pune, Maharashtra",
+          crop: "Maize",
+          soilType: "Black soil",
+          irrigationMethod: "Drip",
+          growthStage: "Flowering",
+          farmSize: 2.5,
+        },
+        weatherContext: {
+          timezone: "Asia/Kolkata",
+          locationKey: JSON.stringify([
+            18.52,
+            73.85,
+            "27",
+            "521",
+            "Pune, Pune, Maharashtra",
+          ]),
+          source: "Open-Meteo",
+          currentTemperatureC: 29,
+          currentHumidityPercent: 60,
+          currentWindSpeedKmh: 8,
+          dailyForecasts: [
+            {
+              date: "2026-10-15",
+              maxTemperatureC: 32,
+              minTemperatureC: 23,
+              precipitationMm: 1.2,
+              precipitationProbabilityPercent: 30,
+              maxWindSpeedKmh: 18,
+            },
+            {
+              date: "2026-10-16",
+              maxTemperatureC: 31,
+              minTemperatureC: 22,
+              precipitationMm: 4,
+              precipitationProbabilityPercent: 50,
+              maxWindSpeedKmh: 14,
+            },
+          ],
+        },
       },
-      farmContext: {
-        location: "Pune, Pune, Maharashtra",
-        crop: "Maize",
-        soilType: "Black soil",
-        irrigationMethod: "Drip",
-        growthStage: "Flowering",
-        farmSize: 2.5,
-      },
-      weatherContext: {
-        timezone: "Asia/Kolkata",
-        source: "Open-Meteo",
-        currentTemperatureC: 29,
-        currentHumidityPercent: 60,
-        currentWindSpeedKmh: 8,
-        dailyForecasts: [
-          {
-            date: "2026-10-15",
-            maxTemperatureC: 32,
-            minTemperatureC: 23,
-            precipitationMm: 1.2,
-            precipitationProbabilityPercent: 30,
-            maxWindSpeedKmh: 18,
-          },
-          {
-            date: "2026-10-16",
-            maxTemperatureC: 31,
-            minTemperatureC: 22,
-            precipitationMm: 4,
-            precipitationProbabilityPercent: 50,
-            maxWindSpeedKmh: 14,
-          },
-        ],
-      },
-    });
+    );
   });
 
   it("omits missing context and never turns missing weather into zero", () => {
@@ -125,6 +152,7 @@ describe("assistant application context integration", () => {
     assert.deepEqual(context, {
       locationContext: {
         displayName: "Pune, Pune, Maharashtra",
+        locationKey: assistantLocationKey(location),
         state: "Maharashtra",
         district: "Pune",
       },
@@ -141,9 +169,10 @@ describe("assistant application context integration", () => {
       ],
     };
     const weatherContext = createAssistantRequestContext(
-      null,
+      location,
       null,
       missingValues,
+      assistantLocationKey(location),
     ).weatherContext;
     assert.equal(weatherContext?.currentTemperatureC, undefined);
     assert.equal(weatherContext?.currentHumidityPercent, undefined);
@@ -151,5 +180,63 @@ describe("assistant application context integration", () => {
       weatherContext?.dailyForecasts?.[0]?.precipitationMm,
       undefined,
     );
+  });
+
+  it("keys weather snapshots to the confirmed location and ignores stale responses", async () => {
+    const udupi: FarmLocation = {
+      ...location,
+      name: "Udupi, Udupi, Karnataka",
+      latitude: 13.5269,
+      longitude: 74.8731,
+      state: "Karnataka",
+      district: "Udupi",
+      administrativeArea: {
+        state: { code: "29", name: "Karnataka" },
+        district: { code: "523", name: "Udupi" },
+      },
+    };
+    const wayanad: FarmLocation = {
+      ...udupi,
+      name: "Wayanad, Kerala",
+      latitude: 11.7151,
+      longitude: 76.1271,
+      state: "Kerala",
+      district: "Wayanad",
+      administrativeArea: {
+        state: { code: "32", name: "Kerala" },
+        district: { code: "555", name: "Wayanad" },
+      },
+    };
+    assert.notEqual(assistantLocationKey(udupi), assistantLocationKey(wayanad));
+    assert.equal(
+      isWeatherSnapshotForLocation(wayanad, assistantLocationKey(udupi)),
+      false,
+    );
+    assert.equal(
+      isWeatherSnapshotForLocation(udupi, assistantLocationKey(udupi)),
+      true,
+    );
+    assert.equal(
+      createAssistantRequestContext(
+        wayanad,
+        profile,
+        weather,
+        assistantLocationKey(udupi),
+      ).weatherContext,
+      undefined,
+    );
+
+    const requests = createWeatherRequestSequence();
+    const oldRequest = requests.next();
+    const newRequest = requests.next();
+    let displayed = "";
+    const delayedOldResponse = new Promise<void>((resolve) =>
+      setTimeout(resolve, 10),
+    ).then(() => {
+      if (requests.isCurrent(oldRequest)) displayed = "Udupi";
+    });
+    if (requests.isCurrent(newRequest)) displayed = "Wayanad";
+    await delayedOldResponse;
+    assert.equal(displayed, "Wayanad");
   });
 });

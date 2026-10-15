@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   createRequestSequence,
+  emptyCoordinateSelectionDraft,
   filterDistrictsForState,
   parseSavedLocation,
   resetAfterDistrictChange,
@@ -33,6 +34,35 @@ describe("cascading location selection", () => {
       district: "555",
       subdistrict: "",
       block: "",
+    });
+  });
+
+  it("clears prior coordinates and confirmation when location changes", () => {
+    const oldResult = {
+      name: "Udupi",
+      latitude: 13.5269784,
+      longitude: 74.8731879,
+      state: "Karnataka",
+      district: "Udupi",
+      provider: "openstreetmap" as const,
+    };
+    const previousDraft = {
+      results: [oldResult],
+      selectedResult: oldResult,
+      latitude: String(oldResult.latitude),
+      longitude: String(oldResult.longitude),
+      source: "openstreetmap" as const,
+      confirmed: true,
+    };
+
+    assert.notDeepEqual(previousDraft, emptyCoordinateSelectionDraft());
+    assert.deepEqual(emptyCoordinateSelectionDraft(), {
+      results: [],
+      selectedResult: null,
+      latitude: "",
+      longitude: "",
+      source: "manual",
+      confirmed: false,
     });
   });
 

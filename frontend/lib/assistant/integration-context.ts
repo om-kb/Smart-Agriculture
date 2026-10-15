@@ -8,16 +8,48 @@ export type AssistantRequestContext = Pick<
   "farmContext" | "locationContext" | "weatherContext"
 >;
 
+export function assistantLocationKey(location: FarmLocation | null): string {
+  if (!location) return "";
+  return JSON.stringify([
+    location.latitude,
+    location.longitude,
+    location.administrativeArea?.state.code ?? location.state ?? "",
+    location.administrativeArea?.district.code ?? location.district ?? "",
+    location.name,
+  ]);
+}
+
+export function isWeatherSnapshotForLocation(
+  location: FarmLocation | null,
+  snapshotKey: string | undefined,
+): boolean {
+  return Boolean(
+    location?.coordinatesConfirmed &&
+      snapshotKey &&
+      snapshotKey === assistantLocationKey(location),
+  );
+}
+
+export function createWeatherRequestSequence() {
+  let currentRequestId = 0;
+  return {
+    next: () => ++currentRequestId,
+    isCurrent: (requestId: number) => requestId === currentRequestId,
+  };
+}
+
 export function createAssistantRequestContext(
   location: FarmLocation | null,
   profile: FarmProfile | null,
   weather: WeatherData | null,
+  weatherLocationKey?: string,
 ): AssistantRequestContext {
   const context: AssistantRequestContext = {};
 
   if (location) {
     context.locationContext = {
       displayName: location.name,
+      locationKey: assistantLocationKey(location),
       ...(location.administrativeArea
         ? {
             state: location.administrativeArea.state.name,
@@ -44,10 +76,16 @@ export function createAssistantRequestContext(
     context.farmContext = farmContext;
   }
 
-  if (weather) {
+  const locationKey = assistantLocationKey(location);
+  if (
+    weather &&
+    location?.coordinatesConfirmed &&
+    weatherLocationKey === locationKey
+  ) {
     const weatherContext: NonNullable<ChatRequest["weatherContext"]> = {
       timezone: weather.location.timezone,
       source: weather.source.name,
+      locationKey,
     };
     if (weather.current.temperatureC !== null) {
       weatherContext.currentTemperatureC = weather.current.temperatureC;

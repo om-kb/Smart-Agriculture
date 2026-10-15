@@ -113,6 +113,7 @@ export interface FarmContext {
 
 export interface WeatherContext {
   timezone?: string;
+  locationKey?: string;
   currentTemperatureC?: number;
   currentHumidityPercent?: number;
   currentWindSpeedKmh?: number;
@@ -127,8 +128,14 @@ export interface WeatherContext {
   source?: string;
 }
 
+export type ForecastTemporalIntent =
+  | { kind: "today" | "tonight" | "tomorrow" | "day-after-tomorrow" }
+  | { kind: "explicit-date"; day: number; month: number; year?: number }
+  | { kind: "unspecified" };
+
 export interface LocationContext {
   displayName?: string;
+  locationKey?: string;
   state?: string;
   district?: string;
 }

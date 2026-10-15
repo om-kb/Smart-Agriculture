@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { handleChatRequest } from "./route-handler.ts";
-import { createAssistantRequestContext } from "./integration-context.ts";
+import {
+  assistantLocationKey,
+  createAssistantRequestContext,
+} from "./integration-context.ts";
 import { generateChatResponse } from "./response.ts";
 import type { FarmProfile } from "../farm/types.ts";
 import type { FarmLocation } from "../location/types.ts";
@@ -137,7 +140,7 @@ describe("POST /api/assistant/chat", () => {
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(body.topicId, "weather.forecast");
-    assert.match(body.answer, /Rain is forecast for Pune.*approximately 4 mm expected/);
+    assert.match(body.answer, /For Pune on \d{1,2} \w+.*approximately 4 mm/);
     assert.match(body.answer, /Open-Meteo/);
   });
 
@@ -148,6 +151,7 @@ describe("POST /api/assistant/chat", () => {
         confirmedLocation,
         savedProfile,
         currentWeather,
+        assistantLocationKey(confirmedLocation),
       ),
     }).answer;
     const response = await handleChatRequest(
@@ -158,6 +162,7 @@ describe("POST /api/assistant/chat", () => {
             confirmedLocation,
             savedProfile,
             currentWeather,
+            assistantLocationKey(confirmedLocation),
           ),
           recentTurns: [
             {

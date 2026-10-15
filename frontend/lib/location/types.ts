@@ -1,6 +1,6 @@
 import type { LocationSelection } from "../lgd/types.ts";
 
-export type LocationSource = "manual" | "open-meteo";
+export type LocationSource = "manual" | "openstreetmap" | "open-meteo";
 
 export interface FarmLocation {
   name: string;
@@ -20,4 +20,5 @@ export interface GeocodingResult {
   state?: string;
   district?: string;
   country?: string;
+  provider?: "openstreetmap";
 }

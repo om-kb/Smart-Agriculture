@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   clearSavedConversation,
   getConversationSnapshot,
@@ -66,6 +72,17 @@ export function AssistantChat({
   const [isSending, setIsSending] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
   const scrollTargetRef = useRef<HTMLDivElement>(null);
+  const requestId = useRef(0);
+  const requestController = useRef<AbortController | null>(null);
+
+  useLayoutEffect(
+    () => () => {
+      requestId.current += 1;
+      requestController.current?.abort();
+      requestController.current = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     scrollTargetRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -84,18 +101,24 @@ export function AssistantChat({
     setDraft("");
     setRequestError(null);
     setIsSending(true);
+    const activeRequestId = ++requestId.current;
+    const controller = new AbortController();
+    requestController.current = controller;
 
     try {
       const response = await fetch("/api/assistant/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           message: trimmed,
           recentTurns: apiTurns(conversation.messages),
           ...context,
         }),
       });
+      if (activeRequestId !== requestId.current) return;
       const payload: unknown = await response.json();
+      if (activeRequestId !== requestId.current) return;
       if (!response.ok) {
         setRequestError(errorMessage(payload));
         return;
@@ -114,11 +137,14 @@ export function AssistantChat({
         [...contextMessages, assistantMessage].slice(-MAX_STORED_MESSAGES),
       );
     } catch {
-      setRequestError(
-        copy.networkFailure,
-      );
+      if (activeRequestId === requestId.current && !controller.signal.aborted) {
+        setRequestError(copy.networkFailure);
+      }
     } finally {
-      setIsSending(false);
+      if (activeRequestId === requestId.current) {
+        requestController.current = null;
+        setIsSending(false);
+      }
     }
   }
 
