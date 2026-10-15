@@ -30,6 +30,19 @@ The health endpoint is available at http://localhost:3000/api/health and returns
 {"status":"ok","service":"smart-agriculture"}
 ```
 
+## Location setup
+
+Open `/setup` to select a state or union territory and district. Sub-district and development block selections are optional; selections are saved in this browser and shown on `/dashboard`.
+
+The Next.js Route Handlers proxy the public, keyless [India LGD API](https://india-lgd-index-api.vercel.app/) and cache successful location data for one hour:
+
+- `GET /api/locations/states`
+- `GET /api/locations/districts?state={code}`
+- `GET /api/locations/subdistricts?district={code}`
+- `GET /api/locations/blocks?district={code}`
+
+The upstream dataset is based on the Ministry of Panchayati Raj's Local Government Directory and is provided under GODL-India. The service keeps its attribution in the upstream response.
+
 Run all project checks from `frontend`:
 
 ```powershell

@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function Home() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-stone-50 px-6 py-16 text-stone-900">
@@ -9,6 +11,12 @@ export default function Home() {
         <p className="mt-5 text-lg text-stone-600 sm:text-xl">
           A simple starting point for data-driven agricultural tools.
         </p>
+        <Link
+          className="mt-8 inline-flex min-h-12 items-center justify-center rounded-xl bg-emerald-800 px-6 py-3 font-semibold text-white hover:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-800"
+          href="/setup"
+        >
+          Choose your location
+        </Link>
       </section>
     </main>
   );
