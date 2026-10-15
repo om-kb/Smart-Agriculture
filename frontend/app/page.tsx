@@ -1,4 +1,15 @@
-const modules = ["Local weather", "Crop advisory", "AI assistance"];
 export default function Home() {
-  return <main className="min-h-screen bg-stone-50 px-6 py-16 text-stone-900"><section className="mx-auto max-w-5xl overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-xl"><div className="bg-emerald-800 px-8 py-16 text-white sm:px-14"><p className="mb-4 text-sm font-semibold uppercase tracking-[0.24em] text-emerald-200">Built for Indian agriculture</p><h1 className="max-w-3xl text-4xl font-bold sm:text-6xl">Smart Agriculture Advisor</h1><p className="mt-5 text-lg text-emerald-50 sm:text-xl">Empowering Indian Farmers with Data-Driven Insights</p></div><div className="grid gap-5 p-8 sm:grid-cols-3 sm:p-14">{modules.map((module, index) => <article key={module} className="rounded-2xl border border-stone-200 bg-stone-50 p-6"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 font-bold text-amber-800">{index + 1}</span><h2 className="mt-8 text-lg font-semibold">{module}</h2><p className="mt-2 text-sm text-stone-600">Coming in a future development phase.</p></article>)}</div></section></main>;
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-stone-50 px-6 py-16 text-stone-900">
+      <section className="w-full max-w-3xl rounded-3xl border border-emerald-100 bg-white px-8 py-16 text-center shadow-xl sm:px-14">
+        <p className="mb-4 text-sm font-semibold uppercase tracking-[0.24em] text-emerald-700">
+          Built for Indian agriculture
+        </p>
+        <h1 className="text-4xl font-bold sm:text-6xl">Smart Agriculture Advisor</h1>
+        <p className="mt-5 text-lg text-stone-600 sm:text-xl">
+          A simple starting point for data-driven agricultural tools.
+        </p>
+      </section>
+    </main>
+  );
 }

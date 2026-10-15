@@ -1,54 +1,48 @@
 # Smart Agriculture Advisor
 
-A farmer-friendly platform for Indian agriculture. This initial version establishes a tested development environment for future geographic, weather, crop advisory, and AI features.
+A farmer-friendly platform for Indian agriculture. This repository currently provides a minimal Next.js homepage and health endpoint as the foundation for future development.
 
 ## Stack and structure
 
-- `frontend/`: Next.js App Router, React, strict TypeScript, Tailwind CSS, ESLint
-- `backend/`: Python 3.12+, FastAPI, Uvicorn, Pydantic Settings, HTTPX, Pytest
+- `frontend/`: Next.js App Router, React, strict TypeScript, Tailwind CSS, ESLint, and tests
+- `netlify.toml`: Netlify build and Next.js runtime configuration
 - `.github/`: pull-request CI; `docs/` and `scripts/`: supporting material
+
+Backend functionality uses Next.js Route Handlers. There is no separate Python service, database, or LLM API integration.
 
 ## Prerequisites and setup
 
-Install Git, Node.js 24+, pnpm 10+, and Python 3.12+. Clone the repository and run `git switch dev`.
+Install Git, Node.js 24+, and pnpm 11. Clone the repository and run `git switch dev`.
 
-Frontend:
+From the repository root:
 
 ```powershell
 cd frontend
-Copy-Item .env.example .env.local
 pnpm install --frozen-lockfile
 pnpm dev
 ```
 
 Open http://localhost:3000.
 
-Backend (PowerShell):
+The health endpoint is available at http://localhost:3000/api/health and returns:
 
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-Copy-Item .env.example .env
-python -m uvicorn app.main:app --reload --port 8000
+```json
+{"status":"ok","service":"smart-agriculture"}
 ```
 
-On macOS/Linux, activate with `source .venv/bin/activate` and copy with `cp .env.example .env`. API docs are at http://localhost:8000/docs. Test health with `curl http://localhost:8000/api/v1/health`; the expected response is `{"status":"ok","service":"smart-agriculture-backend"}`.
+Run all project checks from `frontend`:
 
-Run checks with `pnpm lint` and `pnpm typecheck` from `frontend`, and `python -m pytest` from `backend`.
+```powershell
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+## Deployment
+
+Connect the repository to Netlify and deploy the `dev` branch (or a feature branch) for previews. `netlify.toml` configures the Next.js build and Netlify Next.js runtime; no database or API secrets are required for the current application.
 
 ## Git workflow and contributions
 
-Branch from `dev` into `feature/<name>` (including `feature/api`, `feature/backend`, or `feature/ui`). Open feature pull requests into `dev`; promote `dev` to `main` only through a separate validated pull request. Never push directly to `main`.
-
-Keep HTTP integrations in backend service modules, read configuration from environment variables, test new backend behavior, update documentation when contracts change, and never commit secrets or real `.env` files. See [AGENTS.md](AGENTS.md).
-
-## Windows troubleshooting
-
-- If `python` opens Microsoft Store, install from python.org with **Add Python to PATH**, or use `py -3.12`.
-- If PowerShell blocks activation, use `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` or call `.venv\Scripts\python.exe` directly.
-- If `pnpm` is missing, run `corepack enable` and `corepack prepare pnpm@latest --activate`.
-- For port conflicts, stop the process using 3000/8000; update the frontend API URL if the backend port changes.
-- For CORS errors, ensure `BACKEND_CORS_ORIGINS` contains the exact frontend origin and restart.
-- For long-path errors, run `git config --global core.longpaths true`.
+Branch from `dev` into `feature/<name>` and open feature pull requests into `dev`; promote `dev` to `main` only through a separate validated pull request. Never push directly to `main`. See [AGENTS.md](AGENTS.md) for contribution rules.
