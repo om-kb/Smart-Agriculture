@@ -5,7 +5,15 @@ export const weatherKnowledge = [
     id: "weather.current",
     category: "weather",
     title: "Current weather",
-    supportedPatterns: ["current weather", "weather right now", "temperature now"],
+    supportedPatterns: [
+      "current weather",
+      "weather right now",
+      "temperature now",
+      "what s the weather here",
+      "what is the weather here",
+      "weather here",
+      "local weather",
+    ],
     synonyms: ["today weather", "what is the weather"],
     keywords: ["temperature", "humidity", "weather"],
     answer:

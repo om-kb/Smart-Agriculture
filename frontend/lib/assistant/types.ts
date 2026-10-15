@@ -36,6 +36,8 @@ export const TOPIC_IDS = [
   "help.weather-and-advisories",
 ] as const;
 
+export const MAX_ASSISTANT_RESPONSE_LENGTH = 5_000;
+
 export type TopicId = (typeof TOPIC_IDS)[number];
 export type KnowledgeCategory =
   | "weather"

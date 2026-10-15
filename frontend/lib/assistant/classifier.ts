@@ -43,6 +43,8 @@ const WEATHER_TERMS = [
   "heat",
 ] as const;
 
+const FUZZY_MATCH_STOPWORDS = new Set(["what"]);
+
 export function normalizeQuestion(value: string): string {
   return value
     .normalize("NFKC")
@@ -127,6 +129,7 @@ function scoreEntry(question: string, entry: KnowledgeEntry): number {
       [...questionWords].some(
         (word) =>
           word.length >= 4 &&
+          !FUZZY_MATCH_STOPWORDS.has(word) &&
           word !== normalizedKeyword &&
           editDistanceAtMostOne(word, normalizedKeyword),
       )
@@ -153,6 +156,7 @@ function matchesAlias(question: string, aliases: readonly string[]): boolean {
     return words.some(
       (word) =>
         word.length >= 4 &&
+        !FUZZY_MATCH_STOPWORDS.has(word) &&
         word !== normalizedAlias &&
         editDistanceAtMostOne(word, normalizedAlias),
     );

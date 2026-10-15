@@ -1,13 +1,14 @@
 import { isTopicId } from "./classifier.ts";
-import type {
-  ChatResponse,
-  StoredChatMessage,
+import {
+  MAX_ASSISTANT_RESPONSE_LENGTH,
+  type ChatResponse,
+  type StoredChatMessage,
 } from "./types.ts";
 import { ENGLISH_ASSISTANT_COPY as copy } from "./copy.ts";
 
 export const CONVERSATION_STORAGE_KEY = "smart-agriculture-assistant-v1";
 export const MAX_STORED_MESSAGES = 40;
-const MAX_STORED_MESSAGE_LENGTH = 5_000;
+const MAX_STORED_MESSAGE_LENGTH = MAX_ASSISTANT_RESPONSE_LENGTH;
 const MAX_STORED_CONVERSATION_LENGTH = 1_000_000;
 const EMPTY_MESSAGES: StoredChatMessage[] = [];
 

@@ -15,6 +15,11 @@ describe("rule-based intent classification", () => {
       "weather.forecast",
     );
     assert.equal(
+      classifyIntent("What's the weather here?").intent,
+      "weather.current",
+    );
+    assert.deepEqual(extractEntities("What's the weather here?").crops, []);
+    assert.equal(
       classifyIntent("Is paddy farming suitable for me?").intent,
       "crop.rice",
     );

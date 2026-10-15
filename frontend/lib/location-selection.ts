@@ -1,4 +1,4 @@
-import type { LocationSelection } from "./lgd/types.ts";
+import type { District, LocationSelection } from "./lgd/types.ts";
 
 export const LOCATION_STORAGE_KEY = "smart-agriculture-location";
 
@@ -15,6 +15,21 @@ export const emptyLocationSelection: LocationSelectionState = {
   subdistrict: "",
   block: "",
 };
+
+export function createRequestSequence() {
+  let currentRequestId = 0;
+  return {
+    next: () => ++currentRequestId,
+    isCurrent: (requestId: number) => requestId === currentRequestId,
+  };
+}
+
+export function filterDistrictsForState(
+  districts: District[],
+  stateCode: string,
+): District[] {
+  return districts.filter((district) => district.state_code === stateCode);
+}
 
 export function resetAfterStateChange(state: string): LocationSelectionState {
   return { ...emptyLocationSelection, state };

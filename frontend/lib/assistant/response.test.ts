@@ -20,6 +20,15 @@ describe("rule-based response generation", () => {
     assert.deepEqual(response.missingInformation, [
       "weather data from a connected weather source",
     ]);
+    const locationOnly = generateChatResponse({
+      message: "What's the weather here?",
+      locationContext: { displayName: "Pune", state: "Maharashtra" },
+    });
+    assert.equal(locationOnly.topicId, "weather.current");
+    assert.match(
+      locationOnly.answer,
+      /No validated live weather data was available/,
+    );
   });
 
   it("uses only supplied weather fields and marks their context", () => {
@@ -132,6 +141,62 @@ describe("rule-based response generation", () => {
 
     const missing = generateChatResponse({ message: "What crop am I growing?" });
     assert.match(missing.answer, /No saved farm profile context was available/);
+  });
+
+  it("answers the requested farmer questions from the supplied context", () => {
+    const farmContext = {
+      crop: "Maize",
+      soilType: "Black soil",
+      irrigationMethod: "Drip",
+      growthStage: "Flowering",
+      farmSize: 2.5,
+      location: "Pune, Pune, Maharashtra",
+    };
+    const locationContext = {
+      displayName: "Pune, Pune, Maharashtra",
+      state: "Maharashtra",
+      district: "Pune",
+    };
+    const weatherContext = {
+      temperatureC: 29,
+      humidityPercent: 60,
+      windSpeedKmh: 8,
+      rainfallForecastMm: 4,
+      forecastDate: "2026-10-17",
+      source: "Open-Meteo",
+      fetchedAt: "2026-10-16T01:00:00.000Z",
+    };
+    const questions = [
+      {
+        message: "What crop am I growing?",
+        expected: /lists Maize as your crop/,
+      },
+      {
+        message: "What soil type did I select?",
+        expected: /lists Black soil as your soil type/,
+      },
+      {
+        message: "Will it rain tomorrow?",
+        expected: /4 mm forecast rainfall/,
+      },
+      {
+        message: "What's the weather here?",
+        expected: /29 °C.*60% humidity/,
+      },
+    ];
+
+    for (const { message, expected } of questions) {
+      const response = generateChatResponse({
+        message,
+        farmContext,
+        locationContext,
+        weatherContext,
+      });
+      assert.match(response.answer, expected, message);
+      if (message === "What's the weather here?") {
+        assert.doesNotMatch(response.answer, /question mentions wheat/i);
+      }
+    }
   });
 
   it("asks for relevant details for underspecified irrigation advice", () => {

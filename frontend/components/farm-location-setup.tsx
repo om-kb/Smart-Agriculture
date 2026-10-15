@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  createRequestSequence,
   emptyLocationSelection,
+  filterDistrictsForState,
   LOCATION_STORAGE_KEY as LGD_LOCATION_STORAGE_KEY,
   parseSavedLocation,
   resetAfterDistrictChange,
@@ -45,6 +47,7 @@ export default function FarmLocationSetup() {
   const router = useRouter();
   const [states, setStates] = useState<State[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
+  const [districtsStateCode, setDistrictsStateCode] = useState("");
   const [subdistricts, setSubdistricts] = useState<Subdistrict[]>([]);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [selection, setSelection] =
@@ -65,12 +68,16 @@ export default function FarmLocationSetup() {
   const [locationSearchLoad, setLocationSearchLoad] = useState<LoadState>("idle");
   const [error, setError] = useState("");
   const [locationSearchError, setLocationSearchError] = useState("");
-  const districtRequestId = useRef(0);
-  const detailRequestId = useRef(0);
+  const districtRequestId = useRef(createRequestSequence());
+  const detailRequestId = useRef(createRequestSequence());
   const searchRequestId = useRef(0);
 
   const selectedState = states.find((state) => state.code === selection.state);
-  const selectedDistrict = districts.find(
+  const visibleDistricts = useMemo(
+    () => (districtsStateCode === selection.state ? districts : []),
+    [districts, districtsStateCode, selection.state],
+  );
+  const selectedDistrict = visibleDistricts.find(
     (district) => district.code === selection.district,
   );
   const numericLatitude = Number(latitude);
@@ -83,6 +90,8 @@ export default function FarmLocationSetup() {
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
+    let restoreDistrictRequestId: number | undefined;
+    let restoreDetailRequestId: number | undefined;
 
     async function restoreLocation() {
       let savedWeatherLocation: FarmLocation | null = null;
@@ -128,18 +137,24 @@ export default function FarmLocationSetup() {
         );
         if (!active) return;
         setStates(stateOptions);
+        setStatesLoad("idle");
 
         if (!savedArea) return;
         const matchingState = stateOptions.find(
           (state) => state.code === savedArea.state.code,
         );
         if (!matchingState) return;
+        restoreDistrictRequestId = districtRequestId.current.next();
         setSelection({
           state: matchingState.code,
           district: "",
           subdistrict: "",
           block: "",
         });
+        setDistricts([]);
+        setDistrictsStateCode("");
+        setSubdistricts([]);
+        setBlocks([]);
 
         setDistrictsLoad("loading");
         const districtOptions = await fetchLocationOptions(
@@ -147,9 +162,19 @@ export default function FarmLocationSetup() {
           isDistrict,
           controller.signal,
         );
-        if (!active) return;
-        setDistricts(districtOptions);
-        const matchingDistrict = districtOptions.find(
+        if (
+          !active ||
+          !districtRequestId.current.isCurrent(restoreDistrictRequestId)
+        ) {
+          return;
+        }
+        const stateDistricts = filterDistrictsForState(
+          districtOptions,
+          matchingState.code,
+        );
+        setDistricts(stateDistricts);
+        setDistrictsStateCode(matchingState.code);
+        const matchingDistrict = stateDistricts.find(
           (district) => district.code === savedArea.district.code,
         );
         if (!matchingDistrict) return;
@@ -165,6 +190,9 @@ export default function FarmLocationSetup() {
           buildGeocodingQuery(matchingDistrict.name, matchingState.name),
         );
 
+        restoreDetailRequestId = detailRequestId.current.next();
+        setSubdistrictsLoad("loading");
+        setBlocksLoad("loading");
         const [subdistrictResult, blockResult] = await Promise.allSettled([
           fetchLocationOptions(
             `/api/locations/subdistricts?district=${encodeURIComponent(matchingDistrict.code)}`,
@@ -177,21 +205,37 @@ export default function FarmLocationSetup() {
             controller.signal,
           ),
         ]);
-        if (!active) return;
+        if (
+          !active ||
+          !districtRequestId.current.isCurrent(restoreDistrictRequestId) ||
+          !detailRequestId.current.isCurrent(restoreDetailRequestId)
+        ) {
+          return;
+        }
 
         if (subdistrictResult.status === "fulfilled") {
-          setSubdistricts(subdistrictResult.value);
+          const restoredSubdistricts = subdistrictResult.value.filter(
+            (item) =>
+              item.state_code === matchingState.code &&
+              item.district_code === matchingDistrict.code,
+          );
+          setSubdistricts(restoredSubdistricts);
           restoredSelection.subdistrict =
-            subdistrictResult.value.find(
+            restoredSubdistricts.find(
               (item) => item.code === savedArea?.subdistrict?.code,
             )?.code ?? "";
         } else {
           setError(getErrorMessage(subdistrictResult.reason));
         }
         if (blockResult.status === "fulfilled") {
-          setBlocks(blockResult.value);
+          const restoredBlocks = blockResult.value.filter(
+            (item) =>
+              item.state_code === matchingState.code &&
+              item.district_code === matchingDistrict.code,
+          );
+          setBlocks(restoredBlocks);
           restoredSelection.block =
-            blockResult.value.find(
+            restoredBlocks.find(
               (item) => item.code === savedArea?.block?.code,
             )?.code ?? "";
         } else {
@@ -216,9 +260,19 @@ export default function FarmLocationSetup() {
       } finally {
         if (active) {
           setStatesLoad("idle");
-          setDistrictsLoad("idle");
-          setSubdistrictsLoad("idle");
-          setBlocksLoad("idle");
+          if (
+            restoreDistrictRequestId === undefined ||
+            districtRequestId.current.isCurrent(restoreDistrictRequestId)
+          ) {
+            setDistrictsLoad("idle");
+          }
+          if (
+            restoreDetailRequestId === undefined ||
+            detailRequestId.current.isCurrent(restoreDetailRequestId)
+          ) {
+            setSubdistrictsLoad("idle");
+            setBlocksLoad("idle");
+          }
         }
       }
     }
@@ -244,16 +298,22 @@ export default function FarmLocationSetup() {
 
   const handleStateChange = useCallback(
     async (stateCode: string) => {
-      const requestId = ++districtRequestId.current;
-      detailRequestId.current += 1;
+      const requestId = districtRequestId.current.next();
+      detailRequestId.current.next();
       setError("");
       setDistricts([]);
+      setDistrictsStateCode("");
       setSubdistricts([]);
       setBlocks([]);
+      setSubdistrictsLoad("idle");
+      setBlocksLoad("idle");
       setSelection(resetAfterStateChange(stateCode));
       setLocationQuery("");
       resetCoordinates();
-      if (!stateCode) return;
+      if (!stateCode) {
+        setDistrictsLoad("idle");
+        return;
+      }
 
       setDistrictsLoad("loading");
       try {
@@ -261,13 +321,18 @@ export default function FarmLocationSetup() {
           `/api/locations/districts?state=${encodeURIComponent(stateCode)}`,
           isDistrict,
         );
-        if (requestId === districtRequestId.current) setDistricts(options);
+        if (districtRequestId.current.isCurrent(requestId)) {
+          setDistricts(filterDistrictsForState(options, stateCode));
+          setDistrictsStateCode(stateCode);
+        }
       } catch (loadError) {
-        if (requestId === districtRequestId.current) {
+        if (districtRequestId.current.isCurrent(requestId)) {
           setError(getErrorMessage(loadError));
         }
       } finally {
-        if (requestId === districtRequestId.current) setDistrictsLoad("idle");
+        if (districtRequestId.current.isCurrent(requestId)) {
+          setDistrictsLoad("idle");
+        }
       }
     },
     [resetCoordinates],
@@ -275,11 +340,13 @@ export default function FarmLocationSetup() {
 
   const handleDistrictChange = useCallback(
     async (districtCode: string) => {
-      const requestId = ++detailRequestId.current;
-      const district = districts.find((item) => item.code === districtCode);
+      const requestId = detailRequestId.current.next();
+      const district = visibleDistricts.find((item) => item.code === districtCode);
       setError("");
       setSubdistricts([]);
       setBlocks([]);
+      setSubdistrictsLoad("idle");
+      setBlocksLoad("idle");
       setSelection((current) => resetAfterDistrictChange(current, districtCode));
       setLocationQuery(
         district && selectedState
@@ -301,15 +368,27 @@ export default function FarmLocationSetup() {
           isBlock,
         ),
       ]);
-      if (requestId !== detailRequestId.current) return;
+      if (!detailRequestId.current.isCurrent(requestId)) return;
 
       if (subdistrictResult.status === "fulfilled") {
-        setSubdistricts(subdistrictResult.value);
+        setSubdistricts(
+          subdistrictResult.value.filter(
+            (item) =>
+              item.state_code === selection.state &&
+              item.district_code === districtCode,
+          ),
+        );
       } else {
         setError(getErrorMessage(subdistrictResult.reason));
       }
       if (blockResult.status === "fulfilled") {
-        setBlocks(blockResult.value);
+        setBlocks(
+          blockResult.value.filter(
+            (item) =>
+              item.state_code === selection.state &&
+              item.district_code === districtCode,
+          ),
+        );
       } else {
         setError((current) =>
           current
@@ -320,7 +399,7 @@ export default function FarmLocationSetup() {
       setSubdistrictsLoad("idle");
       setBlocksLoad("idle");
     },
-    [districts, resetCoordinates, selectedState],
+    [visibleDistricts, resetCoordinates, selectedState, selection.state],
   );
 
   async function searchCoordinates(event: React.FormEvent<HTMLFormElement>) {
@@ -479,7 +558,7 @@ export default function FarmLocationSetup() {
               id="district"
               label="District"
               value={selection.district}
-              options={districts}
+              options={visibleDistricts}
               loading={districtsLoad === "loading"}
               disabled={!selection.state || districtsLoad === "loading"}
               placeholder="Choose your district"

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  createRequestSequence,
+  filterDistrictsForState,
   parseSavedLocation,
   resetAfterDistrictChange,
   resetAfterStateChange,
@@ -52,5 +54,75 @@ describe("cascading location selection", () => {
       null,
     );
     assert.equal(parseSavedLocation(null), null);
+  });
+
+  it("keeps only the latest state response when requests finish out of order", async () => {
+    const requests = createRequestSequence();
+    const visibleDistricts: Array<{
+      code: string;
+      name: string;
+      state_code: string;
+    }> = [];
+    let visibleState = "";
+    let resolveMaharashtra!: (value: Array<{
+      code: string;
+      name: string;
+      state_code: string;
+    }>) => void;
+    let resolveKerala!: (value: Array<{
+      code: string;
+      name: string;
+      state_code: string;
+    }>) => void;
+    const maharashtraResponse = new Promise<Array<{
+      code: string;
+      name: string;
+      state_code: string;
+    }>>((resolve) => {
+      resolveMaharashtra = resolve;
+    });
+    const keralaResponse = new Promise<Array<{
+      code: string;
+      name: string;
+      state_code: string;
+    }>>((resolve) => {
+      resolveKerala = resolve;
+    });
+
+    const maharashtraRequest = requests.next();
+    const maharashtraLoad = maharashtraResponse.then((districts) => {
+      if (requests.isCurrent(maharashtraRequest)) {
+        visibleDistricts.splice(
+          0,
+          visibleDistricts.length,
+          ...filterDistrictsForState(districts, "27"),
+        );
+        visibleState = "27";
+      }
+    });
+    const keralaRequest = requests.next();
+    const keralaLoad = keralaResponse.then((districts) => {
+      if (requests.isCurrent(keralaRequest)) {
+        visibleDistricts.splice(
+          0,
+          visibleDistricts.length,
+          ...filterDistrictsForState(districts, "32"),
+        );
+        visibleState = "32";
+      }
+    });
+
+    resolveKerala([
+      { code: "554", name: "Alappuzha", state_code: "32" },
+      { code: "521", name: "Pune", state_code: "27" },
+    ]);
+    await keralaLoad;
+    resolveMaharashtra([{ code: "521", name: "Pune", state_code: "27" }]);
+    await maharashtraLoad;
+
+    assert.equal(visibleState, "32");
+    assert.deepEqual(visibleDistricts, [
+      { code: "554", name: "Alappuzha", state_code: "32" },
+    ]);
   });
 });

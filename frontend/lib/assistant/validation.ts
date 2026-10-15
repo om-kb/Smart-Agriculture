@@ -6,7 +6,10 @@ import type {
   LocationContext,
   WeatherContext,
 } from "./types.ts";
-import { TOPIC_IDS } from "./types.ts";
+import {
+  MAX_ASSISTANT_RESPONSE_LENGTH,
+  TOPIC_IDS,
+} from "./types.ts";
 
 export const MAX_CHAT_MESSAGE_LENGTH = 500;
 export const MAX_RECENT_TURNS = 10;
@@ -136,7 +139,10 @@ function validateRecentTurns(value: unknown): value is ConversationTurn[] {
         (turn.role === "user" || turn.role === "assistant") &&
         typeof turn.content === "string" &&
         turn.content.trim().length > 0 &&
-        turn.content.length <= MAX_CHAT_MESSAGE_LENGTH,
+        turn.content.length <=
+          (turn.role === "user"
+            ? MAX_CHAT_MESSAGE_LENGTH
+            : MAX_ASSISTANT_RESPONSE_LENGTH),
     )
   );
 }
@@ -209,7 +215,7 @@ export function isChatResponse(value: unknown): value is ChatResponse {
   if (!isRecord(value)) return false;
   return (
     typeof value.answer === "string" &&
-    value.answer.length <= 5_000 &&
+    value.answer.length <= MAX_ASSISTANT_RESPONSE_LENGTH &&
     typeof value.confidence === "number" &&
     Number.isFinite(value.confidence) &&
     value.confidence >= 0 &&
