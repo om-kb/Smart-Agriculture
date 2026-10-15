@@ -61,7 +61,7 @@ function appendWeatherContext(
 ): { answer: string; used: boolean } {
   if (!context) {
     return {
-      answer: `${answer} Live weather is not connected to this chat yet, so I cannot say what conditions apply at your farm.`,
+      answer: `${answer} No validated live weather data was available for this reply, so I cannot say what conditions apply at your farm.`,
       used: false,
     };
   }
@@ -170,6 +170,9 @@ function generalResponse(
   if (location && topicId === "crop.suitability") {
     answer += ` You provided ${location} as location context, but I do not have verified district-specific crop data for it.`;
   }
+  if (location && usedWeather) {
+    answer += ` The selected forecast location is ${location}.`;
+  }
 
   const missingInformation = missingForTopic(topicId, request);
   const suggestedFollowUps = [...entry.followUpQuestions];
@@ -266,7 +269,50 @@ function fallbackResponse(
   };
 }
 
+function savedProfileAnswer(request: ChatRequest): ChatResponse | null {
+  const message = request.message
+    .toLocaleLowerCase("en")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  const asksCrop =
+    /\bwhat crop am i (?:currently )?(?:growing|planting)\b/.test(message) ||
+    /\bwhich crop did i (?:select|save|choose)\b/.test(message) ||
+    /\b(?:my|our) saved crop\b/.test(message);
+  const asksSoil =
+    /\bwhat soil type did i (?:select|save|choose)\b/.test(message) ||
+    /\bwhich soil type did i (?:select|save|choose)\b/.test(message) ||
+    /\bwhat soil type is in my (?:farm )?profile\b/.test(message);
+  if (!asksCrop && !asksSoil) return null;
+
+  const field = asksCrop ? "crop" : "soilType";
+  const value = request.farmContext?.[field]?.trim();
+  const label = asksCrop ? "crop" : "soil type";
+  const answer = value
+    ? `Your saved farm profile lists ${value} as your ${label}.`
+    : request.farmContext
+      ? `Your saved farm profile does not list a ${label} yet. You can add it in Farm profile.`
+      : `No saved farm profile context was available, so I cannot confirm your ${label}. Add or review it in Farm profile.`;
+  return {
+    answer,
+    matchedIntent: null,
+    confidence: 0.9,
+    confidenceLabel: "high",
+    topicId: null,
+    verificationStatus: null,
+    sources: [],
+    suggestedFollowUps: [
+      asksCrop ? "What soil type did I select?" : "What crop am I growing?",
+      "How do I edit my farm profile?",
+    ],
+    missingInformation: value ? [] : [`saved ${label}`],
+    basis: "contextual-follow-up",
+  };
+}
+
 export function generateChatResponse(request: ChatRequest): ChatResponse {
+  const profileAnswer = savedProfileAnswer(request);
+  if (profileAnswer) return profileAnswer;
+
   const classification = classifyIntent(request.message);
   if (classification.status !== "supported" || !classification.intent) {
     const continuation = contextFollowUp(request.message, request.recentTurns);

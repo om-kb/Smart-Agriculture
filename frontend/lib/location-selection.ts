@@ -78,8 +78,11 @@ function isSavedPlace(value: unknown): value is { code: string; name: string } {
   return (
     isRecord(value) &&
     typeof value.code === "string" &&
+    value.code.length <= 32 &&
     /^\d+$/.test(value.code) &&
-    typeof value.name === "string"
+    typeof value.name === "string" &&
+    value.name.trim().length > 0 &&
+    value.name.length <= 160
   );
 }
 

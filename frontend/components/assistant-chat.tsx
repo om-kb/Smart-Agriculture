@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import Link from "next/link";
 import {
   clearSavedConversation,
   getConversationSnapshot,
@@ -20,6 +19,7 @@ import type {
   ConversationTurn,
   StoredChatMessage,
 } from "../lib/assistant/types.ts";
+import type { AssistantRequestContext } from "../lib/assistant/integration-context.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -50,7 +50,13 @@ function makeMessage(
   };
 }
 
-export function AssistantChat() {
+export function AssistantChat({
+  context = {},
+  contextNotice,
+}: {
+  context?: AssistantRequestContext;
+  contextNotice?: string;
+}) {
   const conversation = useSyncExternalStore(
     subscribeToConversation,
     getConversationSnapshot,
@@ -86,6 +92,7 @@ export function AssistantChat() {
         body: JSON.stringify({
           message: trimmed,
           recentTurns: apiTurns(conversation.messages),
+          ...context,
         }),
       });
       const payload: unknown = await response.json();
@@ -126,21 +133,10 @@ export function AssistantChat() {
     <main className="min-h-screen bg-[#f5f4e9] px-3 py-4 text-stone-900 sm:px-6 sm:py-8">
       <div className="mx-auto flex min-h-[calc(100dvh-2rem)] max-w-6xl flex-col overflow-hidden rounded-[2rem] border border-emerald-950/10 bg-white shadow-[0_24px_80px_-36px_rgba(15,71,48,0.35)] sm:min-h-[calc(100dvh-4rem)]">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-200 px-5 py-4 sm:px-8">
-          <Link href="/" className="flex items-center gap-3 rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-700">
-            <span className="flex size-11 items-center justify-center rounded-2xl bg-emerald-800 text-xl text-white" aria-hidden="true">
-              ✳
-            </span>
-            <span>
-              <span className="block text-sm font-bold tracking-tight text-emerald-950 sm:text-base">
-                {copy.brandName}
-              </span>
-              <span className="block text-xs text-stone-500">{copy.appSubtitle}</span>
-            </span>
-          </Link>
+          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+            {copy.languageBadge}
+          </span>
           <div className="flex items-center gap-2">
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
-              {copy.languageBadge}
-            </span>
             <button
               type="button"
               onClick={clearSavedConversation}
@@ -166,6 +162,13 @@ export function AssistantChat() {
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-600">
                 {copy.intro}
+              </p>
+              <p
+                aria-live="polite"
+                className="mt-3 rounded-xl bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-950"
+              >
+                {contextNotice ??
+                  "No location, farm profile, or live weather context is currently supplied."}
               </p>
             </div>
 

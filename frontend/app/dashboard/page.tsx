@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   FARM_PROFILE_UPDATED_EVENT,
   FARM_PROFILE_STORAGE_KEY,
@@ -19,6 +25,7 @@ import {
   type AgriculturalAdvisory,
 } from "@/lib/advisory/engine";
 import type { WeatherData } from "@/lib/weather/types";
+import { isWeatherData } from "@/lib/weather/validation";
 import {
   describeWeatherCode,
   formatForecastDate,
@@ -38,8 +45,14 @@ export default function DashboardPage() {
     () => getStoredValue(FARM_PROFILE_STORAGE_KEY),
     () => null,
   );
-  const location = deserializeLocation(storedLocation);
-  const profile = deserializeFarmProfile(storedProfile);
+  const location = useMemo(
+    () => deserializeLocation(storedLocation),
+    [storedLocation],
+  );
+  const profile = useMemo(
+    () => deserializeFarmProfile(storedProfile),
+    [storedProfile],
+  );
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [advisories, setAdvisories] = useState<AgriculturalAdvisory[]>([]);
   const [weatherLocation, setWeatherLocation] = useState("");
@@ -69,7 +82,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!location) return;
+    if (!location?.coordinatesConfirmed) return;
     let active = true;
     void loadWeather(location)
       .then((data) => {
@@ -110,10 +123,12 @@ export default function DashboardPage() {
     ? `${location.latitude},${location.longitude}`
     : "";
   const weatherIsCurrent = Boolean(
-    location && weather && weatherLocation === currentLocationKey,
+    location?.coordinatesConfirmed &&
+      weather &&
+      weatherLocation === currentLocationKey,
   );
   const isLoading =
-    Boolean(location) &&
+    Boolean(location?.coordinatesConfirmed) &&
     (loadState === "loading" ||
       (!weatherIsCurrent &&
         !(error && errorLocation === currentLocationKey)));
@@ -122,50 +137,21 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-[#f7f8ef] text-stone-900">
-      <header className="border-b border-emerald-100 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <Link className="text-lg font-bold text-emerald-950" href="/">
-            🌱 Smart Agriculture Advisor
-          </Link>
-          <nav
-            aria-label="Main navigation"
-            className="flex flex-wrap items-center gap-2"
-          >
-            <Link
-              aria-current="page"
-              className="min-h-11 rounded-lg bg-emerald-50 px-4 py-2 font-semibold text-emerald-900"
-              href="/dashboard"
-            >
-              Dashboard
-            </Link>
-            <Link
-              className="min-h-11 rounded-lg px-4 py-2 font-semibold text-stone-700 hover:bg-stone-50"
-              href="/farm"
-            >
-              Farm profile
-            </Link>
-            <Link
-              className="min-h-11 rounded-lg px-4 py-2 font-semibold text-stone-700 hover:bg-stone-50"
-              href="/setup"
-            >
-              Change location
-            </Link>
-          </nav>
-        </div>
-      </header>
-
       <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
-        {!location ? (
+        {!location || !location.coordinatesConfirmed ? (
           <section className="rounded-3xl border border-emerald-100 bg-white p-8 sm:p-12">
             <p className="text-sm font-bold uppercase tracking-widest text-emerald-700">
               Welcome to your farm dashboard
             </p>
             <h1 className="mt-3 text-3xl font-bold sm:text-4xl">
-              Start with your location
+              {location
+                ? "Confirm your forecast location"
+                : "Start with your location"}
             </h1>
             <p className="mt-3 max-w-xl leading-7 text-stone-600">
-              Choose a nearby place or enter verified coordinates to see a local
-              forecast. We never request your GPS location automatically.
+              {location
+                ? "Your saved coordinates need confirmation before weather can be requested. Review the selected area and coordinates to continue."
+                : "Choose your official area and confirm approximate or manually entered coordinates to see a local forecast. We never request your GPS location automatically."}
             </p>
             <Link
               className="mt-6 inline-flex min-h-12 items-center rounded-xl bg-emerald-800 px-6 py-3 font-semibold text-white hover:bg-emerald-900"
@@ -190,9 +176,9 @@ export default function DashboardPage() {
                   {location.name} · {location.latitude}, {location.longitude}
                 </p>
                 <p className="mt-1 text-sm text-emerald-200">
-                  {location.coordinatesConfirmed
-                    ? "Coordinates confirmed by you"
-                    : "Approximate geocoded coordinates — verify for your field"}
+                  {location.source === "open-meteo"
+                    ? "Approximate forecast location, confirmed by you"
+                    : "Manual coordinates, confirmed by you"}
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">
@@ -247,6 +233,50 @@ export default function DashboardPage() {
                 >
                   Try again
                 </button>
+              </section>
+            )}
+
+            {location.administrativeArea && (
+              <section
+                aria-labelledby="administrative-location-heading"
+                className="rounded-2xl border border-emerald-100 bg-white p-5 sm:p-6"
+              >
+                <h2
+                  className="text-lg font-bold text-emerald-950"
+                  id="administrative-location-heading"
+                >
+                  Official administrative area
+                </h2>
+                <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <LocationDetail
+                    label="State / Union Territory"
+                    value={location.administrativeArea.state.name}
+                    code={location.administrativeArea.state.code}
+                  />
+                  <LocationDetail
+                    label="District"
+                    value={location.administrativeArea.district.name}
+                    code={location.administrativeArea.district.code}
+                  />
+                  {location.administrativeArea.subdistrict && (
+                    <LocationDetail
+                      label="Sub-district"
+                      value={location.administrativeArea.subdistrict.name}
+                      code={location.administrativeArea.subdistrict.code}
+                    />
+                  )}
+                  {location.administrativeArea.block && (
+                    <LocationDetail
+                      label="Development block"
+                      value={location.administrativeArea.block.name}
+                      code={location.administrativeArea.block.code}
+                    />
+                  )}
+                </dl>
+                <p className="mt-3 text-xs text-stone-500">
+                  Sub-district and development block are distinct LGD entities.
+                  Their codes are administrative identifiers, not coordinates.
+                </p>
               </section>
             )}
 
@@ -434,16 +464,23 @@ export default function DashboardPage() {
 
                 <section className="rounded-2xl border border-emerald-100 bg-white p-6 sm:p-8">
                   <p className="text-sm font-bold uppercase tracking-widest text-emerald-700">
-                    Coming soon
+                    Ask a follow-up
                   </p>
                   <h2 className="mt-2 text-xl font-bold text-emerald-950">
                     Farming assistant
                   </h2>
                   <p className="mt-2 max-w-2xl leading-7 text-stone-600">
-                    A future rule-based assistant will help explain local
-                    weather and farming guidance. This preview is not a chatbot
-                    and does not provide AI-generated answers.
+                    Ask about the weather, your saved crop or soil, irrigation,
+                    and supported farming topics. The assistant uses only
+                    validated saved profile data and the current available
+                    forecast context.
                   </p>
+                  <Link
+                    className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-emerald-800 px-5 py-2 font-semibold text-white hover:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-800"
+                    href="/assistant"
+                  >
+                    Open farming assistant
+                  </Link>
                 </section>
                 <footer className="pb-5 text-xs leading-5 text-stone-500">
                   General weather awareness only. Forecasts can change and do
@@ -457,6 +494,24 @@ export default function DashboardPage() {
         )}
       </div>
     </main>
+  );
+}
+
+function LocationDetail({
+  label,
+  value,
+  code,
+}: {
+  label: string;
+  value: string;
+  code: string;
+}) {
+  return (
+    <div className="rounded-xl bg-[#f7f8ef] p-4">
+      <dt className="text-xs font-medium text-stone-500">{label}</dt>
+      <dd className="mt-1 font-semibold text-emerald-950">{value}</dd>
+      <dd className="mt-1 text-xs text-stone-500">LGD code {code}</dd>
+    </div>
   );
 }
 
@@ -588,15 +643,4 @@ function getStoredValue(key: string): string | null {
   } catch {
     return null;
   }
-}
-
-function isWeatherData(value: unknown): value is WeatherData {
-  return (
-    isRecord(value) &&
-    isRecord(value.current) &&
-    isRecord(value.location) &&
-    Array.isArray(value.daily) &&
-    isRecord(value.source) &&
-    typeof value.fetchedAt === "string"
-  );
 }

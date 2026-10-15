@@ -5,6 +5,7 @@ import {
   parseOpenMeteoResponse,
   WeatherServiceError,
 } from "./service.ts";
+import { isWeatherData } from "./validation.ts";
 
 const fixture = {
   latitude: 19.99,
@@ -45,6 +46,7 @@ const fixture = {
 describe("Open-Meteo response parsing", () => {
   it("normalizes a documented response into metric weather data", () => {
     const weather = parseOpenMeteoResponse(fixture, 19.99, 73.78);
+    assert.equal(isWeatherData(weather), true);
     assert.equal(weather.current.temperatureC, 29);
     assert.equal(weather.current.feelsLikeC, 31);
     assert.equal(weather.daily.length, 2);
@@ -95,6 +97,17 @@ describe("Open-Meteo response parsing", () => {
     assert.throws(
       () => parseOpenMeteoResponse({}, 19.99, 73.78),
       WeatherServiceError,
+    );
+  });
+
+  it("rejects malformed weather data at the client boundary", () => {
+    const weather = parseOpenMeteoResponse(fixture, 19.99, 73.78);
+    assert.equal(
+      isWeatherData({
+        ...weather,
+        current: { ...weather.current, temperatureC: "warm" },
+      }),
+      false,
     );
   });
 });

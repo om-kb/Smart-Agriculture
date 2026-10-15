@@ -14,5 +14,9 @@ export function deserializeLocation(value: string | null): FarmLocation | null {
 }
 
 export function serializeLocation(location: FarmLocation): string {
-  return JSON.stringify(location);
+  const validated = parseFarmLocation(location);
+  if (!validated) {
+    throw new Error("Check the location and coordinate values before saving.");
+  }
+  return JSON.stringify(validated);
 }

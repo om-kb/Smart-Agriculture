@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test app/api/health/route.test.ts app/api/locations/route-handler.test.ts lib/lgd/service.test.ts lib/location-selection.test.ts lib/location/validation.test.ts lib/location/geocoding.test.ts lib/farm/validation.test.ts lib/weather/service.test.ts lib/weather/route-handler.test.ts lib/advisory/engine.test.ts components/weather/presentation.test.ts lib/assistant/classifier.test.ts lib/assistant/response.test.ts lib/assistant/validation.test.ts lib/assistant/route-handler.test.ts lib/assistant/storage.test.ts"
+    "test": "node --experimental-strip-types --test app/api/health/route.test.ts app/api/locations/route-handler.test.ts lib/lgd/service.test.ts lib/location-selection.test.ts lib/location/validation.test.ts lib/location/geocoding.test.ts lib/farm/validation.test.ts lib/weather/service.test.ts lib/weather/route-handler.test.ts lib/advisory/engine.test.ts components/weather/presentation.test.ts lib/assistant/classifier.test.ts lib/assistant/response.test.ts lib/assistant/validation.test.ts lib/assistant/route-handler.test.ts lib/assistant/storage.test.ts lib/assistant/integration-context.test.ts"
   },
   "dependencies": {
     "next": "16.4.1",

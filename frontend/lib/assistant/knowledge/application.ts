@@ -9,7 +9,7 @@ export const applicationKnowledge = [
     synonyms: ["change my location", "location picker"],
     keywords: ["location", "select", "setup"],
     answer:
-      "Location setup is not connected to this assistant build yet. When the location selector is integrated, use its available search or administrative selection controls and verify the displayed place; place search results may be approximate.",
+      "Choose a state or union territory and district using the official LGD directory; sub-district and development block are optional and distinct. Then review the approximate forecast coordinates, confirm the administrative match, or enter a manual correction before continuing.",
     cropOrSoilCategory: null,
     followUpQuestions: ["Would you like help creating a farm profile?"],
   }),
@@ -21,7 +21,7 @@ export const applicationKnowledge = [
     synonyms: ["farm profile help", "add my crop"],
     keywords: ["profile", "farm details", "save"],
     answer:
-      "The farm-profile editor is not connected to this assistant build yet. When integrated, review optional crop, soil, irrigation, and growth-stage details before saving. Do not enter sensitive personal information.",
+      "Open Farm profile to edit optional crop, soil, irrigation, growth-stage, farm-size, and sowing-date details. These values stay in this browser and are not sent to weather services; avoid entering sensitive personal information.",
     cropOrSoilCategory: null,
     followUpQuestions: ["How do I understand the weather cards?"],
   }),
@@ -33,7 +33,7 @@ export const applicationKnowledge = [
     synonyms: ["weather dashboard help", "advisory meaning"],
     keywords: ["cards", "dashboard", "advisory", "interpret"],
     answer:
-      "The weather dashboard is not connected to this assistant build yet. When integrated, weather cards should be read with their named provider, date, and units; they are not field measurements. Advisories are general screening prompts, not crop-specific instructions or official warnings.",
+      "Open Dashboard to review current conditions, the seven-day forecast, and general weather advisories. Read each card with its date and units; forecasts are not field measurements, and advisories are general screening prompts rather than crop-specific instructions or official warnings.",
     cropOrSoilCategory: null,
     followUpQuestions: ["Which weather card or advisory are you looking at?", "Would you like a general forecast explanation?"],
   }),

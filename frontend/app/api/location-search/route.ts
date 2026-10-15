@@ -12,10 +12,10 @@ export async function GET(request: Request): Promise<Response> {
     entries[0][0] !== "q" ||
     !search ||
     search.trim().length < 2 ||
-    search.length > 100
+    search.length > 160
   ) {
     return Response.json(
-      { error: "Enter a location name between 2 and 100 characters." },
+      { error: "Enter a location name between 2 and 160 characters." },
       { status: 400 },
     );
   }

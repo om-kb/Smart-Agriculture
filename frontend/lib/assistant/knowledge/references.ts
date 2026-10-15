@@ -26,5 +26,5 @@ export const PMKSY_PORTAL: SourceReference = {
 
 export const APPLICATION_REFERENCE: SourceReference = {
   label: "Application scope for this release",
-  note: "This assistant branch documents intended app help; the corresponding location, profile, or dashboard screen is not connected here.",
+  note: "Describes this application's location, farm-profile, and weather-dashboard controls; it is not an agronomic authority.",
 };

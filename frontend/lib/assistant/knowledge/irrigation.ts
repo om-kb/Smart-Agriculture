@@ -6,8 +6,8 @@ export const irrigationKnowledge = [
     id: "irrigation.general",
     category: "irrigation",
     title: "General irrigation considerations",
-    supportedPatterns: ["irrigation advice", "when should i irrigate", "how to decide irrigation", "should i water my crop", "should i irrigate", "irrigate tomorrow", "irrigation after rain", "rainfall before irrigation", "should i irrigate after rain"],
-    synonyms: ["watering advice", "water my field"],
+    supportedPatterns: ["irrigation advice", "when should i irrigate", "how to decide irrigation", "should i water my crop", "should i irrigate", "irrigate tomorrow", "irrigation after rain", "rainfall before irrigation", "should i irrigate after rain", "should i consider irrigating tomorrow"],
+    synonyms: ["watering advice", "water my field", "consider irrigation tomorrow"],
     keywords: ["irrigation", "irrigate", "water", "watering"],
     answer:
       "I cannot determine an irrigation need without field conditions. Consider the crop and growth stage, root-zone soil moisture, recent rain and a local forecast, soil drainage, and available water. Avoid relying on a fixed calendar alone; share those details for a more relevant general discussion.",

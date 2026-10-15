@@ -14,6 +14,7 @@ export function validateFarmProfile(value: unknown): value is FarmProfile {
   if (!isRecord(value)) return false;
   return (
     typeof value.farmName === "string" &&
+    value.farmName.length <= 100 &&
     (value.farmSize === null ||
       (typeof value.farmSize === "number" &&
         Number.isFinite(value.farmSize) &&

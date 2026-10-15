@@ -1,5 +1,134 @@
-import { AssistantChat } from "../../components/assistant-chat.tsx";
+"use client";
+
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { AssistantChat } from "@/components/assistant-chat";
+import {
+  FARM_PROFILE_STORAGE_KEY,
+  FARM_PROFILE_UPDATED_EVENT,
+  deserializeFarmProfile,
+} from "@/lib/farm/storage";
+import {
+  LOCATION_STORAGE_KEY,
+  LOCATION_UPDATED_EVENT,
+  deserializeLocation,
+} from "@/lib/location/storage";
+import { createAssistantRequestContext } from "@/lib/assistant/integration-context";
+import type { WeatherData } from "@/lib/weather/types";
+import { isWeatherData } from "@/lib/weather/validation";
+
+interface WeatherSnapshot {
+  key: string;
+  data: WeatherData;
+}
 
 export default function AssistantPage() {
-  return <AssistantChat />;
+  const storedLocation = useSyncExternalStore(
+    (callback) =>
+      subscribeToStorage(callback, LOCATION_STORAGE_KEY, LOCATION_UPDATED_EVENT),
+    () => getStoredValue(LOCATION_STORAGE_KEY),
+    () => null,
+  );
+  const storedProfile = useSyncExternalStore(
+    (callback) =>
+      subscribeToStorage(
+        callback,
+        FARM_PROFILE_STORAGE_KEY,
+        FARM_PROFILE_UPDATED_EVENT,
+      ),
+    () => getStoredValue(FARM_PROFILE_STORAGE_KEY),
+    () => null,
+  );
+  const location = useMemo(
+    () => deserializeLocation(storedLocation),
+    [storedLocation],
+  );
+  const profile = useMemo(
+    () => deserializeFarmProfile(storedProfile),
+    [storedProfile],
+  );
+  const locationKey = location
+    ? `${location.latitude},${location.longitude}`
+    : "";
+  const [weatherSnapshot, setWeatherSnapshot] =
+    useState<WeatherSnapshot | null>(null);
+  const [failedWeatherKey, setFailedWeatherKey] = useState("");
+
+  useEffect(() => {
+    if (!location?.coordinatesConfirmed) return;
+    const selectedLocation = location;
+    const controller = new AbortController();
+    const requestKey = locationKey;
+
+    async function loadWeather() {
+      try {
+        const response = await fetch(
+          `/api/weather?latitude=${encodeURIComponent(selectedLocation.latitude)}&longitude=${encodeURIComponent(selectedLocation.longitude)}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        const payload: unknown = await response.json();
+        if (
+          !response.ok ||
+          !isRecord(payload) ||
+          !isWeatherData(payload.data)
+        ) {
+          throw new Error("Weather context is unavailable.");
+        }
+        setWeatherSnapshot({ key: requestKey, data: payload.data });
+        setFailedWeatherKey("");
+      } catch {
+        if (!controller.signal.aborted) {
+          setFailedWeatherKey(requestKey);
+        }
+      }
+    }
+
+    void loadWeather();
+    return () => controller.abort();
+  }, [location, locationKey]);
+
+  const weather =
+    weatherSnapshot?.key === locationKey ? weatherSnapshot.data : null;
+  const context = useMemo(
+    () => createAssistantRequestContext(location, profile, weather),
+    [location, profile, weather],
+  );
+  const contextNotice = !location
+    ? "No confirmed location is saved. Choose your area to add weather context."
+    : !location.coordinatesConfirmed
+      ? "Your location is saved but not confirmed. Review it before weather data is requested."
+      : weather
+      ? `Using ${location.name}, your validated saved farm profile, and Open-Meteo weather fetched at ${weather.fetchedAt}.`
+      : failedWeatherKey === locationKey
+        ? `Using ${location.name} and your validated saved farm profile. Weather could not be loaded for this reply.`
+        : `Using ${location.name} and your validated saved farm profile. Loading current weather context…`;
+
+  return <AssistantChat context={context} contextNotice={contextNotice} />;
+}
+
+function subscribeToStorage(
+  callback: () => void,
+  key: string,
+  customEvent: string,
+) {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === key || event.key === null) callback();
+  };
+  window.addEventListener("storage", onStorage);
+  window.addEventListener(customEvent, callback);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    window.removeEventListener(customEvent, callback);
+  };
+}
+
+function getStoredValue(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

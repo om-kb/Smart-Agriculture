@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import LocationSetupForm from "@/components/location-setup-form";
+import FarmLocationSetup from "@/components/farm-location-setup";
 
 export const metadata: Metadata = {
   title: "Choose your farm location | Smart Agriculture Advisor",
 };
 
 export default function SetupPage() {
-  return <LocationSetupForm />;
+  return <FarmLocationSetup />;
 }

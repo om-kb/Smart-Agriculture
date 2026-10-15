@@ -20,15 +20,13 @@ The API accepts up to ten recent turns as role/content pairs. If a farmer replie
 
 Do not add pesticide/fertilizer dosages, unsupported yield claims, disease diagnoses, or precise irrigation quantities. Prefer a clarification and local extension referral when evidence is insufficient.
 
-## Context integration after feature merges
-
-The classifier and response engine do not fetch weather or read profile storage. An application layer may validate the user's saved selections and pass them to the route:
+## Context integration
 
 - `farmContext`: `crop`, `soilType`, `irrigationMethod`, `growthStage`, `farmSize`, `location`.
 - `locationContext`: `displayName`, `state`, `district`.
 - `weatherContext`: `temperatureC`, `humidityPercent`, `rainfallForecastMm`, `windSpeedKmh`, `forecastDate`, `source`, `fetchedAt`.
 
-Only pass values the user selected or the connected weather API returned. A weather provider and timestamp should accompany readings when available. The assistant identifies supplied values as context, not direct field measurements. If data is missing, stale, or unavailable, omit it and let the response explain the limitation. LGD administrative codes should remain in the location integration layer unless a future feature explicitly requires them here.
+The `/assistant` page loads the validated saved location and farm profile, fetches weather for the confirmed coordinates, and maps only available values through `frontend/lib/assistant/integration-context.ts`. The classifier and response engine do not read browser storage, call LGD, or fetch weather. The assistant identifies supplied values as context, not direct field measurements. If data is missing or unavailable, it is omitted and the response explains the limitation. LGD administrative codes remain in the location integration layer and are not sent to the assistant endpoint.
 
 ## Storage and localization
 

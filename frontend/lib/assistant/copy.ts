@@ -9,7 +9,7 @@ export const ENGLISH_ASSISTANT_COPY = {
     "Answers come from transparent rules and curated topic notes—not generative AI. Local conditions matter; the assistant will ask when key details are missing.",
   welcomeTitle: "Namaste! I can help with common farming topics.",
   welcomeDescription:
-    "I cover weather concepts, irrigation, selected crops and soils, farming practices, and help using this app. I do not know your live weather or farm details unless a connected feature provides them.",
+    "I cover weather concepts, irrigation, selected crops and soils, farming practices, and help using this app. When available, I use your saved location, farm profile, and forecast; I do not infer missing details.",
   safetyNotice:
     "General information only. For crop diagnosis, chemical use, or important field decisions, contact your local agricultural extension expert.",
   starterHeading: "Try asking",

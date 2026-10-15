@@ -87,7 +87,7 @@ function validateFarmContext(value: unknown): value is FarmContext {
         Number.isFinite(value.farmSize) &&
         value.farmSize > 0 &&
         value.farmSize <= 1_000_000)) &&
-    optionalString(value.location, 160)
+    optionalString(value.location, 200)
   );
 }
 
@@ -119,9 +119,9 @@ function validateLocationContext(value: unknown): value is LocationContext {
   return (
     isRecord(value) &&
     hasOnlyKeys(value, ["displayName", "state", "district"]) &&
-    optionalString(value.displayName, 160) &&
-    optionalString(value.state, 100) &&
-    optionalString(value.district, 100)
+    optionalString(value.displayName, 200) &&
+    optionalString(value.state, 160) &&
+    optionalString(value.district, 160)
   );
 }
 

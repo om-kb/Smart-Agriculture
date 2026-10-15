@@ -1,3 +1,5 @@
+import type { LocationSelection } from "../lgd/types.ts";
+
 export type LocationSource = "manual" | "open-meteo";
 
 export interface FarmLocation {
@@ -6,6 +8,7 @@ export interface FarmLocation {
   longitude: number;
   state?: string;
   district?: string;
+  administrativeArea?: LocationSelection;
   source: LocationSource;
   coordinatesConfirmed: boolean;
 }

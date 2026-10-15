@@ -1,13 +1,24 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  buildGeocodingQuery,
   isValidCoordinates,
+  matchGeocodingAdministrativeArea,
   parseFarmLocation,
   parseGeocodingResults,
+  parseGeocodingRouteResponse,
 } from "./validation.ts";
 import { deserializeLocation, serializeLocation } from "./storage.ts";
 
 describe("location validation and persistence", () => {
+  it("builds a qualified geocoding query within the route's limit", () => {
+    assert.equal(buildGeocodingQuery("Pune", "Maharashtra"), "Pune, Maharashtra");
+    assert.equal(
+      buildGeocodingQuery("A".repeat(150), "Maharashtra"),
+      "A".repeat(150),
+    );
+  });
+
   it("accepts coordinates only within geographic bounds", () => {
     assert.equal(parseFarmLocation(null), null);
     assert.equal(isValidCoordinates(90, 180), true);
@@ -29,6 +40,63 @@ describe("location validation and persistence", () => {
     assert.equal(parseFarmLocation({ ...location, latitude: 100 }), null);
   });
 
+  it("preserves validated LGD codes alongside confirmed weather coordinates", () => {
+    const location = {
+      name: "Alappuzha, Kerala",
+      latitude: 9.498,
+      longitude: 76.338,
+      state: "Kerala",
+      district: "Alappuzha",
+      administrativeArea: {
+        state: { code: "32", name: "Kerala" },
+        district: { code: "554", name: "Alappuzha" },
+        subdistrict: { code: "2660", name: "Ambalappuzha" },
+        block: { code: "6716", name: "Ambalappuzha" },
+      },
+      source: "open-meteo" as const,
+      coordinatesConfirmed: true,
+    };
+    assert.deepEqual(
+      deserializeLocation(serializeLocation(location)),
+      location,
+    );
+    assert.equal(
+      parseFarmLocation({
+        ...location,
+        administrativeArea: {
+          ...location.administrativeArea,
+          district: { code: "not-a-code", name: "Alappuzha" },
+        },
+      }),
+      null,
+    );
+  });
+
+  it("distinguishes exact, ambiguous, and conflicting geocoding areas", () => {
+    const selected = { state: "Maharashtra", district: "Pune" };
+    assert.equal(
+      matchGeocodingAdministrativeArea(
+        { name: "Pune", state: "Maharashtra", district: "Pune", latitude: 18, longitude: 73 },
+        selected,
+      ),
+      "match",
+    );
+    assert.equal(
+      matchGeocodingAdministrativeArea(
+        { name: "Pune", state: "Maharashtra", latitude: 18, longitude: 73 },
+        selected,
+      ),
+      "ambiguous",
+    );
+    assert.equal(
+      matchGeocodingAdministrativeArea(
+        { name: "Pune", state: "Goa", district: "Pune", latitude: 18, longitude: 73 },
+        selected,
+      ),
+      "mismatch",
+    );
+  });
+
   it("filters malformed geocoder results and handles failed responses", () => {
     assert.deepEqual(
       parseGeocodingResults({
@@ -47,5 +115,31 @@ describe("location validation and persistence", () => {
       ],
     );
     assert.throws(() => parseGeocodingResults({}), /invalid response/i);
+    assert.deepEqual(
+      parseGeocodingRouteResponse({
+        data: [
+          {
+            name: "Pune",
+            latitude: 18.52,
+            longitude: 73.85,
+            state: "Maharashtra",
+            district: "Pune",
+            country: "India",
+          },
+          { name: "Invalid", latitude: 91, longitude: 0 },
+        ],
+      }),
+      [
+        {
+          name: "Pune",
+          latitude: 18.52,
+          longitude: 73.85,
+          state: "Maharashtra",
+          district: "Pune",
+          country: "India",
+        },
+      ],
+    );
+    assert.throws(() => parseGeocodingRouteResponse({}), /invalid response/i);
   });
 });

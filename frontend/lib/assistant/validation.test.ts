@@ -17,6 +17,21 @@ describe("chat request validation", () => {
     assert.equal(result.valid, true);
   });
 
+  it("accepts location names within the validated location model limits", () => {
+    assert.equal(
+      validateChatRequest({
+        message: "Where is my farm?",
+        locationContext: {
+          displayName: "L".repeat(200),
+          state: "S".repeat(160),
+          district: "D".repeat(160),
+        },
+        farmContext: { location: "L".repeat(200) },
+      }).valid,
+      true,
+    );
+  });
+
   it("rejects malformed messages and unknown request keys", () => {
     assert.equal(validateChatRequest({ message: "" }).valid, false);
     assert.equal(validateChatRequest({ message: "x".repeat(501) }).valid, false);

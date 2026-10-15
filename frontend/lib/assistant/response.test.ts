@@ -15,7 +15,7 @@ describe("rule-based response generation", () => {
 
   it("does not fabricate current weather when context is absent", () => {
     const response = generateChatResponse({ message: "current weather" });
-    assert.match(response.answer, /Live weather is not connected/);
+    assert.match(response.answer, /No validated live weather data was available/);
     assert.equal(response.basis, "general-guidance");
     assert.deepEqual(response.missingInformation, [
       "weather data from a connected weather source",
@@ -40,6 +40,46 @@ describe("rule-based response generation", () => {
     assert.doesNotMatch(response.answer, /temperature is \d/);
   });
 
+  it("answers the farmer's local weather and irrigation questions from context", () => {
+    const current = generateChatResponse({
+      message: "What is the weather like here?",
+      locationContext: {
+        displayName: "Pune, Pune, Maharashtra",
+        state: "Maharashtra",
+        district: "Pune",
+      },
+      weatherContext: {
+        temperatureC: 29,
+        humidityPercent: 60,
+        source: "Open-Meteo",
+        fetchedAt: "2026-10-15T06:30:00.000Z",
+      },
+    });
+    assert.equal(current.topicId, "weather.current");
+    assert.match(current.answer, /29 °C/);
+    assert.match(current.answer, /60% humidity/);
+    assert.match(current.answer, /selected forecast location is Pune/);
+
+    const irrigation = generateChatResponse({
+      message: "Should I consider irrigating tomorrow?",
+      farmContext: {
+        crop: "Maize",
+        soilType: "Black soil",
+        growthStage: "Flowering",
+      },
+      weatherContext: {
+        rainfallForecastMm: 4,
+        forecastDate: "2026-10-16",
+        source: "Open-Meteo",
+      },
+    });
+    assert.equal(irrigation.basis, "weather-context");
+    assert.match(irrigation.answer, /4 mm forecast rainfall/);
+    assert.ok(
+      irrigation.missingInformation.includes("recent rainfall or a local rainfall forecast") === false,
+    );
+  });
+
   it("treats an observed zero rainfall value as supplied context", () => {
     const response = generateChatResponse({
       message: "Should I irrigate after rain?",
@@ -55,7 +95,7 @@ describe("rule-based response generation", () => {
         "recent rainfall or a local rainfall forecast",
       ),
     );
-    assert.doesNotMatch(response.answer, /Live weather is not connected/);
+    assert.doesNotMatch(response.answer, /No validated live weather data was available/);
   });
 
   it("uses crop-only follow-up answers without inventing irrigation needs", () => {
@@ -74,6 +114,24 @@ describe("rule-based response generation", () => {
     assert.match(response.answer, /grow maize/i);
     assert.match(response.answer, /local rainfall information/);
     assert.ok(response.missingInformation.includes("field soil condition"));
+  });
+
+  it("answers saved crop and soil questions from supplied profile context only", () => {
+    const crop = generateChatResponse({
+      message: "What crop am I growing?",
+      farmContext: { crop: "Maize" },
+    });
+    assert.match(crop.answer, /lists Maize as your crop/);
+    assert.equal(crop.basis, "contextual-follow-up");
+
+    const soil = generateChatResponse({
+      message: "What soil type did I select?",
+      farmContext: { soilType: "Black soil" },
+    });
+    assert.match(soil.answer, /lists Black soil as your soil type/);
+
+    const missing = generateChatResponse({ message: "What crop am I growing?" });
+    assert.match(missing.answer, /No saved farm profile context was available/);
   });
 
   it("asks for relevant details for underspecified irrigation advice", () => {
