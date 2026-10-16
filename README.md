@@ -35,7 +35,7 @@ LGD codes are stored as administrative identifiers and are never interpreted as 
 
 ### Location search and Open-Meteo
 
-- `GET /api/location-search?q={place}&district={district}&state={state}` validates the area-qualified query and proxies [OpenStreetMap Nominatim](https://nominatim.org/release-docs/latest/api/Search/). Results are filtered against the selected administrative area, and only exact state/district matches can be selected. Queries are user-triggered, cached for 24 hours, and spaced by at least one second per warm service instance. The setup page provides visible [OpenStreetMap attribution](https://www.openstreetmap.org/copyright).
+- `GET /api/location-search?q={place}&district={district}&state={state}` validates the area-qualified query and proxies [OpenStreetMap Nominatim](https://nominatim.org/release-docs/latest/api/Search/). Results are filtered against the selected administrative area; only exact state/district matches are returned. Responses and upstream fetches are not cached, and requests are spaced by at least one second per warm service instance. The setup page provides visible [OpenStreetMap attribution](https://www.openstreetmap.org/copyright).
 - `GET /api/weather?latitude={latitude}&longitude={longitude}` validates coordinates and proxies the [Forecast API](https://open-meteo.com/en/docs), returning normalized metric current conditions and up to seven daily forecasts. Shared cache lifetime is 30 minutes with stale-while-revalidate; provider requests time out after eight seconds.
 
 Open-Meteo is credited in the dashboard. Review the providers' current [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/) and [Open-Meteo terms](https://open-meteo.com/en/terms) before changing usage. No API keys or environment variables are required.
@@ -76,7 +76,7 @@ Connect the repository to Netlify and deploy the intended branch. `netlify.toml`
 ## Known limitations
 
 - Geocoding is approximate and administrative names may differ between the LGD and geocoder datasets. Conflicting or ambiguous matches cannot be selected. Manual coordinates are checked against a broad India geographic envelope and require confirmation, but this does not prove they lie inside the selected district.
-- Nominatim requests are cached and rate-spaced per warm service instance. Netlify serverless instances do not share an application-wide rate limiter; keep place-name searches user-triggered and low-volume in accordance with the public service policy.
+- Nominatim requests are not cached and are rate-spaced per warm service instance. Netlify serverless instances do not share an application-wide rate limiter; keep place-name searches user-triggered and low-volume in accordance with the public service policy.
 - Forecasts and generic advisory thresholds cannot measure field conditions, soil moisture, crop health, or irrigation needs; forecasts may be incomplete or unavailable.
 - The assistant supports English only. Many agronomic notes are unverified general information; consult local agricultural extension staff and official warnings for high-impact decisions.
 - Browser data is local to that browser/device and is not synchronized across devices. Avoid entering sensitive personal information.

@@ -2,6 +2,7 @@ import {
   GeocodingError,
   type GeocodingArea,
 } from "./geocoding.ts";
+import { matchGeocodingAdministrativeArea } from "./validation.ts";
 import type { GeocodingResult } from "./types.ts";
 
 type GeocodingSearch = (
@@ -11,8 +12,30 @@ type GeocodingSearch = (
 ) => Promise<GeocodingResult[]>;
 
 const RESPONSE_HEADERS = {
-  "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=3600",
+  "Cache-Control": "no-store, max-age=0",
+  "CDN-Cache-Control": "no-store",
+  "Netlify-CDN-Cache-Control": "no-store",
 };
+
+function isIndiaCountry(country: string | undefined): boolean {
+  return (
+    country
+      ?.normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .trim()
+      .toLocaleLowerCase("en") === "india"
+  );
+}
+
+function jsonResponse(
+  body: unknown,
+  init: ResponseInit = {},
+): Response {
+  return Response.json(body, {
+    ...init,
+    headers: { ...RESPONSE_HEADERS, ...init.headers },
+  });
+}
 
 export function createGeocodingRouteHandler(search: GeocodingSearch) {
   return async function GET(request: Request): Promise<Response> {
@@ -34,7 +57,7 @@ export function createGeocodingRouteHandler(search: GeocodingSearch) {
       !state?.trim() ||
       state.length > 160
     ) {
-      return Response.json(
+      return jsonResponse(
         {
           error:
             "Choose a district and state, then enter a place name between 2 and 160 characters.",
@@ -44,12 +67,18 @@ export function createGeocodingRouteHandler(search: GeocodingSearch) {
     }
 
     try {
-      const data = await search(
+      const results = await search(
         query.trim(),
         { state: state.trim(), district: district.trim() },
         request.signal,
       );
-      return Response.json({ data }, { headers: RESPONSE_HEADERS });
+      const area = { state: state.trim(), district: district.trim() };
+      const data = results.filter(
+        (result) =>
+          (!result.country || isIndiaCountry(result.country)) &&
+          matchGeocodingAdministrativeArea(result, area) === "match",
+      );
+      return jsonResponse({ data });
     } catch (error) {
       const geocodingError =
         error instanceof GeocodingError
@@ -57,7 +86,7 @@ export function createGeocodingRouteHandler(search: GeocodingSearch) {
           : new GeocodingError(
               "Location search is temporarily unavailable. Please try again.",
             );
-      return Response.json(
+      return jsonResponse(
         { error: geocodingError.message },
         { status: geocodingError.status },
       );

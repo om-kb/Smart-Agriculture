@@ -10,10 +10,6 @@ const MIN_REQUEST_INTERVAL_MS = 1_100;
 const ATTRIBUTION_URL = "https://www.openstreetmap.org/copyright";
 
 let nextRequestAt = 0;
-const resultCache = new Map<
-  string,
-  { expiresAt: number; results: GeocodingResult[] }
->();
 
 export interface GeocodingArea {
   state: string;
@@ -78,20 +74,17 @@ export function createGeocodingService(fetcher: typeof fetch = fetch) {
       url.searchParams.set("limit", "10");
 
       try {
-        const cached = resultCache.get(url.href);
-        if (cached && cached.expiresAt > Date.now()) return cached.results;
-        if (cached) resultCache.delete(url.href);
         await waitForRequestSlot();
         const response = await fetcher(url, {
           headers: {
             "Accept-Language": "en",
             "User-Agent": `SmartAgricultureAdvisor/1.0 (${ATTRIBUTION_URL})`,
           },
+          cache: "no-store",
           signal: signal
             ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
             : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-          next: { revalidate: 86_400 },
-        } as RequestInit & { next: { revalidate: number } });
+        });
         if (!response.ok) {
           throw new GeocodingError(
             response.status === 429
@@ -101,31 +94,13 @@ export function createGeocodingService(fetcher: typeof fetch = fetch) {
           );
         }
 
-        const results = parseNominatimResults(await response.json())
+        return parseNominatimResults(await response.json())
           .filter(
             (result) =>
               (!result.country ||
                 normalizeQueryPart(result.country) === "india") &&
-              matchGeocodingAdministrativeArea(result, area) !== "mismatch",
-          )
-          .sort(
-            (left, right) =>
-              Number(
-                matchGeocodingAdministrativeArea(right, area) === "match",
-              ) -
-              Number(
-                matchGeocodingAdministrativeArea(left, area) === "match",
-              ),
+              matchGeocodingAdministrativeArea(result, area) === "match",
           );
-        resultCache.set(url.href, {
-          expiresAt: Date.now() + 86_400_000,
-          results,
-        });
-        if (resultCache.size > 200) {
-          const oldest = resultCache.keys().next().value;
-          if (oldest) resultCache.delete(oldest);
-        }
-        return results;
       } catch (error) {
         if (error instanceof GeocodingError) throw error;
         if (error instanceof Error && error.name === "TimeoutError") {

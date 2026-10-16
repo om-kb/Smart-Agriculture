@@ -88,9 +88,20 @@ describe("OpenStreetMap Nominatim geocoding", () => {
       ),
     );
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get("Cache-Control")?.includes("s-maxage=86400"), true);
+    assert.equal(response.headers.get("Cache-Control"), "no-store, max-age=0");
+    assert.equal(response.headers.get("CDN-Cache-Control"), "no-store");
+    assert.equal(response.headers.get("Netlify-CDN-Cache-Control"), "no-store");
     assert.equal((await response.json()).data[0].district, "Udupi");
     assert.equal(searchCount, 1);
+
+    const invalidWithNoStore = await getLocations(
+      new Request("http://localhost/api/location-search?q=Udupi"),
+    );
+    assert.equal(invalidWithNoStore.status, 400);
+    assert.equal(
+      invalidWithNoStore.headers.get("Cache-Control"),
+      "no-store, max-age=0",
+    );
 
     const unavailable = createGeocodingRouteHandler(async () => {
       throw new GeocodingError("Location search is busy. Please wait.", 503);
@@ -104,6 +115,7 @@ describe("OpenStreetMap Nominatim geocoding", () => {
     assert.deepEqual(await failure.json(), {
       error: "Location search is busy. Please wait.",
     });
+    assert.equal(failure.headers.get("Cache-Control"), "no-store, max-age=0");
   });
 
   it("parses the five required Indian districts and preserves administrative ownership", () => {
@@ -164,11 +176,13 @@ describe("OpenStreetMap Nominatim geocoding", () => {
     assert.equal(displayedResult.lat, "13.6");
   });
 
-  it("sends a country- and district-qualified query with required attribution headers", async () => {
+  it("uses the incoming query and disables all fetch caching", async () => {
     const requested: { url?: URL; headers?: HeadersInit } = {};
+    let fetchCache: RequestCache | undefined;
     const service = createGeocodingService(async (input, init) => {
       requested.url = new URL(String(input));
       requested.headers = init?.headers;
+      fetchCache = init?.cache;
       return Response.json([
         districtFixtures[2],
         { ...districtFixtures[0], address: { state: "Karnataka", country: "India" } },
@@ -191,11 +205,12 @@ describe("OpenStreetMap Nominatim geocoding", () => {
       new Headers(requested.headers).get("User-Agent") ?? "",
       /SmartAgricultureAdvisor.*openstreetmap\.org\/copyright/i,
     );
+    assert.equal(fetchCache, "no-store");
     assert.equal(results[0]?.district, "Udupi");
-    assert.equal(results.length, 2);
+    assert.equal(results.length, 1);
   });
 
-  it("filters explicit administrative mismatches and keeps incomplete matches unselectable", () => {
+  it("rejects conflicting and incomplete administrative results", () => {
     const results = parseNominatimResults([
       ...districtFixtures,
       {
@@ -237,6 +252,119 @@ describe("OpenStreetMap Nominatim geocoding", () => {
         { district: "Udupi", state: "Karnataka" },
       ),
       "mismatch",
+    );
+
+    const getWayanad = createGeocodingRouteHandler(async () => results);
+    return getWayanad(
+      new Request(
+        "http://localhost/api/location-search?q=Wayanad&district=Wayanad&state=Kerala",
+      ),
+    ).then(async (response) => {
+      const body = await response.json();
+      assert.deepEqual(
+        body.data.map((result: { district: string }) => result.district),
+        ["Wayanad"],
+      );
+    });
+  });
+
+  it("keeps sequential Udupi, Wayanad, Udupi requests isolated", async () => {
+    const upstreamQueries: string[] = [];
+    const service = createGeocodingService(async (input) => {
+      const upstreamUrl = new URL(String(input));
+      const query = upstreamUrl.searchParams.get("q") ?? "";
+      upstreamQueries.push(query);
+      const result = query.startsWith("Wayanad")
+        ? districtFixtures[1]
+        : districtFixtures[0];
+      return Response.json([result]);
+    });
+    const getLocations = createGeocodingRouteHandler(service.search);
+    const requests = [
+      ["Udupi", "Karnataka"],
+      ["Wayanad", "Kerala"],
+      ["Udupi", "Karnataka"],
+    ] as const;
+    const actualResults: Array<{
+      name: string;
+      latitude: number;
+      longitude: number;
+      state: string;
+      district: string;
+    }> = [];
+
+    for (const [district, state] of requests) {
+      const response = await getLocations(
+        new Request(
+          `http://localhost/api/location-search?q=${encodeURIComponent(`${district}, ${state}`)}&district=${encodeURIComponent(district)}&state=${encodeURIComponent(state)}`,
+        ),
+      );
+      assert.equal(response.status, 200);
+      assert.equal(
+        response.headers.get("Cache-Control"),
+        "no-store, max-age=0",
+      );
+      const body = await response.json();
+      assert.equal(body.data.length, 1);
+      actualResults.push(body.data[0]);
+    }
+
+    assert.deepEqual(upstreamQueries, [
+      "Udupi, Karnataka, India",
+      "Wayanad, Kerala, India",
+      "Udupi, Karnataka, India",
+    ]);
+    assert.deepEqual(
+      actualResults.map(({ district, state }) => [district, state]),
+      [
+        ["Udupi", "Karnataka"],
+        ["Wayanad", "Kerala"],
+        ["Udupi", "Karnataka"],
+      ],
+    );
+    assert.notEqual(actualResults[0]?.latitude, actualResults[1]?.latitude);
+    assert.equal(actualResults[0]?.latitude, actualResults[2]?.latitude);
+  });
+
+  it("keeps concurrent requests with different queries isolated", async () => {
+    const upstreamQueries: string[] = [];
+    const service = createGeocodingService(async (input) => {
+      const query = new URL(String(input)).searchParams.get("q") ?? "";
+      upstreamQueries.push(query);
+      const result = query.startsWith("Wayanad")
+        ? districtFixtures[1]
+        : districtFixtures[0];
+      return Response.json([result]);
+    });
+    const getLocations = createGeocodingRouteHandler(service.search);
+    const [udupiResponse, wayanadResponse] = await Promise.all([
+      getLocations(
+        new Request(
+          "http://localhost/api/location-search?q=Udupi%2C%20Karnataka&district=Udupi&state=Karnataka",
+        ),
+      ),
+      getLocations(
+        new Request(
+          "http://localhost/api/location-search?q=Wayanad%2C%20Kerala&district=Wayanad&state=Kerala",
+        ),
+      ),
+    ]);
+    const [udupi, wayanad] = await Promise.all([
+      udupiResponse.json(),
+      wayanadResponse.json(),
+    ]);
+
+    assert.deepEqual(upstreamQueries.sort(), [
+      "Udupi, Karnataka, India",
+      "Wayanad, Kerala, India",
+    ]);
+    assert.deepEqual(
+      [udupi.data[0].district, udupi.data[0].state],
+      ["Udupi", "Karnataka"],
+    );
+    assert.deepEqual(
+      [wayanad.data[0].district, wayanad.data[0].state],
+      ["Wayanad", "Kerala"],
     );
   });
 
